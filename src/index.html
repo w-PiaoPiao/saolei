@@ -255,10 +255,13 @@
           case ' ':
           case 'Enter':
             e.preventDefault()
-            if (e.shiftKey) {
-              ui.doChord(row, col)
-            } else {
-              ui.onLeftClick(row, col)
+            {
+              const cell = game.board[row]?.[col]
+              if (cell && cell.revealed && cell.adjacentMines > 0) {
+                ui.doChord(row, col)
+              } else {
+                ui.onLeftClick(row, col)
+              }
             }
             break
           case 'f':
