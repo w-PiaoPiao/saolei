@@ -6,12 +6,14 @@ class GameEngine {
       expert: { rows: 16, cols: 30, mines: 99 }
     }
     this.currentLevel = 'beginner'
+    this.currentCustom = null
     this.init('beginner')
   }
 
   init(level) {
     const cfg = this.levels[level]
     this.currentLevel = level
+    this.currentCustom = null
     this.rows = cfg.rows
     this.cols = cfg.cols
     this.totalMines = cfg.mines
@@ -20,7 +22,25 @@ class GameEngine {
     this.timer = 0
     this.flagCount = 0
     this.revealedCount = 0
-    this.board = Array.from({ length: this.rows }, () =>
+    this.board = this.createBoard()
+  }
+
+  initCustom(rows, cols, mines) {
+    this.currentLevel = 'custom'
+    this.currentCustom = { rows, cols, mines }
+    this.rows = rows
+    this.cols = cols
+    this.totalMines = mines
+    this.state = 'ready'
+    this.minesPlaced = false
+    this.timer = 0
+    this.flagCount = 0
+    this.revealedCount = 0
+    this.board = this.createBoard()
+  }
+
+  createBoard() {
+    return Array.from({ length: this.rows }, () =>
       Array.from({ length: this.cols }, () => ({
         mine: false,
         revealed: false,
@@ -49,6 +69,41 @@ class GameEngine {
       }
     }
     this.minesPlaced = true
+
+    while (this.countAdjacentMines(safeRow, safeCol) !== 0) {
+      this.relocateClosestMine(safeRow, safeCol)
+    }
+  }
+
+  relocateClosestMine(safeRow, safeCol) {
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const r = safeRow + dr, c = safeCol + dc
+        if (r < 0 || r >= this.rows || c < 0 || c >= this.cols) continue
+        if (!this.board[r][c].mine) continue
+        for (let tr = 0; tr < this.rows; tr++) {
+          for (let tc = 0; tc < this.cols; tc++) {
+            if (this.board[tr][tc].mine) continue
+            if (Math.abs(tr - safeRow) > 2 || Math.abs(tc - safeCol) > 2) {
+              this.board[r][c].mine = false
+              this.board[tr][tc].mine = true
+              this.recalcMines()
+              return
+            }
+          }
+        }
+      }
+    }
+  }
+
+  recalcMines() {
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (!this.board[r][c].mine) {
+          this.board[r][c].adjacentMines = this.countAdjacentMines(r, c)
+        }
+      }
+    }
   }
 
   countAdjacentMines(row, col) {

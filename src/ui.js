@@ -10,8 +10,10 @@ const FACE_STATES = {
 }
 
 class UIRenderer {
-  constructor(engine) {
+  constructor(engine, audio, stats) {
     this.engine = engine
+    this.audio = audio
+    this.stats = stats
     this.container = document.getElementById('board')
     this.mineCounter = document.getElementById('mine-counter')
     this.timerDisplay = document.getElementById('timer')
@@ -20,9 +22,26 @@ class UIRenderer {
     this.chordPending = false
     this.chordTarget = null
     this.suppressClick = false
+    this.prevState = 'ready'
 
     this.container.addEventListener('mousedown', (e) => this.onMouseDown(e))
     this.container.addEventListener('mouseup', (e) => this.onMouseUp(e))
+  }
+
+  onStateChange(newState) {
+    if (this.prevState === newState) return
+    if (newState === 'playing' && this.prevState === 'ready') {
+      this.stats.onGameStart(this.engine.currentLevel)
+    }
+    if (newState === 'won') {
+      this.stats.onGameWin(this.engine.timer)
+      this.audio.win()
+    }
+    if (newState === 'lost') {
+      this.stats.onGameLose(this.engine.timer)
+      this.audio.explosion()
+    }
+    this.prevState = newState
   }
 
   render() {
@@ -82,6 +101,8 @@ class UIRenderer {
     if (eng.state === 'won' || eng.state === 'lost') return
     if (eng.state === 'ready' || eng.state === 'playing') {
       eng.reveal(row, col)
+      this.onStateChange(eng.state)
+      if (eng.state === 'playing' || eng.state === 'ready') this.audio.click()
       this.render()
     }
   }
@@ -95,6 +116,8 @@ class UIRenderer {
     if (eng.state === 'won' || eng.state === 'lost') return
     if (eng.state === 'ready' || eng.state === 'playing') {
       eng.toggleFlag(row, col)
+      this.onStateChange(eng.state)
+      this.audio.flag()
       this.render()
     }
   }
@@ -128,6 +151,9 @@ class UIRenderer {
         const eng = this.engine
         if (eng.state === 'playing') {
           const didChord = eng.chord(row, col)
+          this.onStateChange(eng.state)
+          if (didChord) this.audio.chordSuccess()
+          else this.audio.chordFail()
           this.render()
           if (!didChord) this.animateFailedChord(row, col)
         }
@@ -155,6 +181,9 @@ class UIRenderer {
     if (eng.state === 'won' || eng.state === 'lost') return
     if (eng.state === 'playing') {
       const didChord = eng.chord(row, col)
+      this.onStateChange(eng.state)
+      if (didChord) this.audio.chordSuccess()
+      else this.audio.chordFail()
       this.render()
       if (!didChord) this.animateFailedChord(row, col)
     }
@@ -179,6 +208,11 @@ class UIRenderer {
         }
       }
     }
+  }
+
+  setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('minesweeper_theme', theme)
   }
 
   updateHUD() {

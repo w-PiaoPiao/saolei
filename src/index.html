@@ -21,11 +21,16 @@
     </div>
     <div id="board"></div>
   </div>
+
   <script src="game.js"></script>
+  <script src="audio.js"></script>
+  <script src="stats.js"></script>
   <script src="ui.js"></script>
   <script>
     const game = new GameEngine()
-    const ui = new UIRenderer(game)
+    const audio = new AudioManager()
+    const stats = new StatsManager()
+    const ui = new UIRenderer(game, audio, stats)
     let timerInterval = null
 
     function startTimer() {
@@ -61,7 +66,138 @@
       game.init(level)
       stopTimer()
       ui.render()
+      ui.prevState = 'ready'
+      if (window.electronAPI) window.electronAPI.updateMenuDifficulty(level)
       setTimeout(fitWindow, 50)
+    }
+
+    function showCustomDialog() {
+      const overlay = document.createElement('div')
+      overlay.className = 'dialog-overlay'
+      overlay.innerHTML = `
+        <div class="dialog">
+          <h2>自定义雷区</h2>
+          <div class="row">
+            <label>行:</label>
+            <input type="number" id="custom-rows" value="16" min="9" max="50">
+          </div>
+          <div class="row">
+            <label>列:</label>
+            <input type="number" id="custom-cols" value="16" min="9" max="50">
+          </div>
+          <div class="row">
+            <label>雷数:</label>
+            <input type="number" id="custom-mines" value="40" min="1">
+          </div>
+          <div class="actions">
+            <button class="btn" id="custom-ok">确定</button>
+            <button class="btn" id="custom-cancel">取消</button>
+          </div>
+        </div>
+      `
+      document.body.appendChild(overlay)
+
+      overlay.querySelector('#custom-ok').addEventListener('click', () => {
+        const rows = parseInt(overlay.querySelector('#custom-rows').value)
+        const cols = parseInt(overlay.querySelector('#custom-cols').value)
+        const mines = parseInt(overlay.querySelector('#custom-mines').value)
+        const maxMines = Math.floor(rows * cols * 0.85)
+
+        if (rows < 9 || cols < 9) {
+          alert('行和列不能小于 9')
+          return
+        }
+        if (rows > 50 || cols > 50) {
+          alert('行和列不能大于 50')
+          return
+        }
+        if (mines < 1 || mines > maxMines) {
+          alert('雷数必须在 1 到 ' + maxMines + ' 之间')
+          return
+        }
+
+        document.body.removeChild(overlay)
+        game.initCustom(rows, cols, mines)
+        stopTimer()
+        ui.render()
+        ui.prevState = 'ready'
+        if (window.electronAPI) window.electronAPI.updateMenuDifficulty('custom')
+        setTimeout(fitWindow, 50)
+      })
+
+      overlay.querySelector('#custom-cancel').addEventListener('click', () => {
+        document.body.removeChild(overlay)
+      })
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) document.body.removeChild(overlay)
+      })
+
+      setTimeout(() => overlay.querySelector('#custom-rows').focus(), 50)
+    }
+
+    function showStatsDialog() {
+      const s = stats.getSummary()
+      function fmt(n) { return String(n).padStart(3, '0') }
+      function fmtTime(t) { return t === null ? '--:--' : Math.floor(t / 60) + ':' + fmt(t % 60) }
+
+      const overlay = document.createElement('div')
+      overlay.className = 'dialog-overlay'
+      overlay.innerHTML = `
+        <div class="dialog" style="min-width:320px">
+          <h2>游戏统计</h2>
+          <p>总局数: ${s.totalGames}</p>
+          <p>胜利: ${s.gamesWon} / 失败: ${s.gamesLost}</p>
+          <p>胜率: ${s.winRate}%</p>
+          <p>当前连胜: ${s.currentStreak}</p>
+          <p>最长连胜: ${s.bestStreak}</p>
+          <p>总游戏时间: ${fmtTime(s.totalPlayTime)}</p>
+          <p style="margin-top:8px">最快完成:</p>
+          <p>  初级: ${fmtTime(s.bestTime.beginner)}</p>
+          <p>  中级: ${fmtTime(s.bestTime.intermediate)}</p>
+          <p>  高级: ${fmtTime(s.bestTime.expert)}</p>
+          <div class="actions">
+            <button class="btn" id="stats-close">关闭</button>
+          </div>
+        </div>
+      `
+      document.body.appendChild(overlay)
+
+      overlay.querySelector('#stats-close').addEventListener('click', () => {
+        document.body.removeChild(overlay)
+      })
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) document.body.removeChild(overlay)
+      })
+    }
+
+    function showAboutDialog() {
+      const overlay = document.createElement('div')
+      overlay.className = 'dialog-overlay'
+      overlay.innerHTML = `
+        <div class="dialog" style="min-width:280px">
+          <h2>关于扫雷</h2>
+          <p>经典扫雷游戏 v1.0</p>
+          <p style="margin-top:8px;font-size:12px">
+            Electron 跨平台桌面应用<br>
+            纯 JavaScript 实现<br>
+            经典 WinXP 风格
+          </p>
+          <div class="actions">
+            <button class="btn" id="about-close">关闭</button>
+          </div>
+        </div>
+      `
+      document.body.appendChild(overlay)
+
+      overlay.querySelector('#about-close').addEventListener('click', () => {
+        document.body.removeChild(overlay)
+      })
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) document.body.removeChild(overlay)
+      })
     }
 
     document.querySelectorAll('.diff-btn').forEach(btn => {
@@ -90,6 +226,38 @@
       if (wasReady && this.state === 'playing') startTimer()
       if (this.state === 'won') stopTimer()
       ui.render()
+    }
+
+    if (window.electronAPI) {
+      window.electronAPI.onMenuAction((data) => {
+        switch (data.action) {
+          case 'new-game':
+            resetGame(game.currentLevel)
+            break
+          case 'difficulty':
+            resetGame(data.level)
+            break
+          case 'custom':
+            showCustomDialog()
+            break
+          case 'theme':
+            ui.setTheme(data.value)
+            if (window.electronAPI) window.electronAPI.updateMenuTheme(data.value)
+            break
+          case 'stats':
+            showStatsDialog()
+            break
+          case 'about':
+            showAboutDialog()
+            break
+        }
+      })
+    }
+
+    const savedTheme = localStorage.getItem('minesweeper_theme')
+    if (savedTheme) {
+      ui.setTheme(savedTheme)
+      if (window.electronAPI) window.electronAPI.updateMenuTheme(savedTheme)
     }
 
     ui.render()
