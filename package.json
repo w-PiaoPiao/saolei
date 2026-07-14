@@ -17,6 +17,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "icon.png",
       "src/**/*"
     ],
     "mac": {

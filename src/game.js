@@ -209,6 +209,18 @@ class GameEngine {
     }
   }
 
+  autoFlagRemainingMines() {
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const cell = this.board[r][c]
+        if (cell.mine && !cell.flagged) {
+          cell.flagged = true
+          this.flagCount++
+        }
+      }
+    }
+  }
+
   checkWin() {
     const totalSafe = this.rows * this.cols - this.totalMines
     return this.revealedCount >= totalSafe

@@ -133,7 +133,18 @@ body {
   border-color: var(--border-dark) var(--border-light) var(--border-light) var(--border-dark);
 }
 
+.cell.cursor {
+  outline: 2px solid var(--color-led);
+  outline-offset: -2px;
+  z-index: 1;
+}
+
 .cell.revealed {
+  background: var(--bg-revealed);
+  border: 1px solid var(--border-revealed);
+}
+
+.cell.shown-number {
   background: var(--bg-revealed);
   border: 1px solid var(--border-revealed);
 }

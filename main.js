@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, ipcMain } = require('electron')
 const path = require('path')
 
 let mainWindow
+let muteMenuItem = null
 
 function createMenu() {
   const template = [
@@ -12,6 +13,12 @@ function createMenu() {
           label: '新游戏',
           accelerator: 'F2',
           click: () => mainWindow.webContents.send('menu-action', { action: 'new-game' })
+        },
+        {
+          label: '静音',
+          type: 'checkbox',
+          checked: false,
+          click: (item) => mainWindow.webContents.send('menu-action', { action: 'toggle-mute', value: item.checked })
         },
         { type: 'separator' },
         { role: 'quit', label: '退出' }
@@ -75,7 +82,9 @@ function createMenu() {
     }
   ]
 
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+  const menu = Menu.buildFromTemplate(template)
+  muteMenuItem = menu.items.find(m => m.label === '游戏').submenu.items.find(m => m.label === '静音')
+  Menu.setApplicationMenu(menu)
 }
 
 function updateMenuDifficulty(level) {
@@ -100,12 +109,17 @@ function updateMenuTheme(theme) {
   })
 }
 
+function updateMenuMute(muted) {
+  if (muteMenuItem) muteMenuItem.checked = muted
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 860,
     height: 680,
     resizable: true,
     title: '扫雷',
+    icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -126,6 +140,10 @@ function createWindow() {
 
   ipcMain.on('update-menu-theme', (_, theme) => {
     updateMenuTheme(theme)
+  })
+
+  ipcMain.on('update-menu-mute', (_, muted) => {
+    updateMenuMute(muted)
   })
 }
 

@@ -228,6 +228,58 @@
       ui.render()
     }
 
+    function setupKeyboard() {
+      ui.setCursor(0, 0)
+      document.addEventListener('keydown', (e) => {
+        const isTyping = ['INPUT', 'TEXTAREA'].includes(e.target.tagName)
+        if (isTyping) return
+
+        const { row, col } = ui.cursor
+        switch (e.key) {
+          case 'ArrowUp':
+            e.preventDefault()
+            ui.setCursor(Math.max(0, row - 1), col)
+            break
+          case 'ArrowDown':
+            e.preventDefault()
+            ui.setCursor(Math.min(game.rows - 1, row + 1), col)
+            break
+          case 'ArrowLeft':
+            e.preventDefault()
+            ui.setCursor(row, Math.max(0, col - 1))
+            break
+          case 'ArrowRight':
+            e.preventDefault()
+            ui.setCursor(row, Math.min(game.cols - 1, col + 1))
+            break
+          case ' ':
+          case 'Enter':
+            e.preventDefault()
+            if (e.shiftKey) {
+              ui.doChord(row, col)
+            } else {
+              ui.onLeftClick(row, col)
+            }
+            break
+          case 'f':
+          case 'F':
+            e.preventDefault()
+            ui.onRightClick(row, col)
+            break
+          case 'F2':
+            e.preventDefault()
+            resetGame(game.currentLevel)
+            break
+        }
+      })
+    }
+
+    function setMute(muted) {
+      audio.enabled = !muted
+      localStorage.setItem('minesweeper_muted', muted)
+      if (window.electronAPI) window.electronAPI.updateMenuMute(muted)
+    }
+
     if (window.electronAPI) {
       window.electronAPI.onMenuAction((data) => {
         switch (data.action) {
@@ -243,6 +295,9 @@
           case 'theme':
             ui.setTheme(data.value)
             if (window.electronAPI) window.electronAPI.updateMenuTheme(data.value)
+            break
+          case 'toggle-mute':
+            setMute(data.value)
             break
           case 'stats':
             showStatsDialog()
@@ -260,7 +315,13 @@
       if (window.electronAPI) window.electronAPI.updateMenuTheme(savedTheme)
     }
 
+    const savedMuted = localStorage.getItem('minesweeper_muted')
+    if (savedMuted !== null) {
+      setMute(savedMuted === 'true')
+    }
+
     ui.render()
+    setupKeyboard()
     setTimeout(fitWindow, 100)
   </script>
 </body>

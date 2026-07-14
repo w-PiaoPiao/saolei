@@ -23,6 +23,10 @@ class UIRenderer {
     this.chordTarget = null
     this.suppressClick = false
     this.prevState = 'ready'
+    this.lastRows = 0
+    this.lastCols = 0
+    this.cellElements = []
+    this.cursor = { row: 0, col: 0 }
 
     this.container.addEventListener('mousedown', (e) => this.onMouseDown(e))
     this.container.addEventListener('mouseup', (e) => this.onMouseUp(e))
@@ -34,6 +38,7 @@ class UIRenderer {
       this.stats.onGameStart(this.engine.currentLevel)
     }
     if (newState === 'won') {
+      this.engine.autoFlagRemainingMines()
       this.stats.onGameWin(this.engine.timer)
       this.audio.win()
     }
@@ -45,51 +50,103 @@ class UIRenderer {
   }
 
   render() {
+    if (this.engine.rows !== this.lastRows || this.engine.cols !== this.lastCols) {
+      this.renderAll()
+    } else {
+      for (let r = 0; r < this.engine.rows; r++) {
+        for (let c = 0; c < this.engine.cols; c++) {
+          this.updateCell(r, c)
+        }
+      }
+    }
+    this.updateHUD()
+    this.updateDifficultyButtons()
+  }
+
+  renderAll() {
     this.container.innerHTML = ''
     this.container.style.gridTemplateColumns = `repeat(${this.engine.cols}, 28px)`
+    this.cellElements = Array.from({ length: this.engine.rows }, () => [])
+    this.lastRows = this.engine.rows
+    this.lastCols = this.engine.cols
 
     for (let r = 0; r < this.engine.rows; r++) {
       for (let c = 0; c < this.engine.cols; c++) {
-        const cell = document.createElement('div')
-        cell.className = 'cell'
-        cell.dataset.row = r
-        cell.dataset.col = c
-
-        const data = this.engine.board[r][c]
-        if (data.revealed) {
-          cell.classList.add('revealed')
-          if (data.mine) {
-            cell.classList.add('mine')
-            if (data.exploded) cell.classList.add('exploded')
-            cell.textContent = '💣'
-          } else if (data.adjacentMines > 0) {
-            cell.style.color = NUMBER_COLORS[data.adjacentMines]
-            cell.textContent = data.adjacentMines
-          }
-        } else {
-          cell.classList.add('hidden')
-          if (data.flagged) {
-            cell.classList.add('flagged')
-            cell.textContent = '🚩'
-          } else if (data.questioned) {
-            cell.classList.add('questioned')
-            cell.textContent = '❓'
-          }
-        }
-
-        cell.addEventListener('click', () => this.onLeftClick(r, c))
-        cell.addEventListener('contextmenu', (e) => {
-          e.preventDefault()
-          this.onRightClick(r, c)
-        })
-        cell.addEventListener('dblclick', () => this.onDoubleClick(r, c))
-
+        const cell = this.createCell(r, c)
+        this.cellElements[r][c] = cell
         this.container.appendChild(cell)
       }
     }
+  }
 
-    this.updateHUD()
-    this.updateDifficultyButtons()
+  createCell(r, c) {
+    const cell = document.createElement('div')
+    cell.className = 'cell'
+    cell.dataset.row = r
+    cell.dataset.col = c
+
+    cell.addEventListener('click', () => this.onLeftClick(r, c))
+    cell.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      this.onRightClick(r, c)
+    })
+    cell.addEventListener('dblclick', () => this.onDoubleClick(r, c))
+
+    this.syncCellElement(cell, r, c)
+    return cell
+  }
+
+  updateCell(r, c) {
+    const el = this.cellElements[r]?.[c]
+    if (!el) return
+    this.syncCellElement(el, r, c)
+  }
+
+  syncCellElement(el, r, c) {
+    const data = this.engine.board[r][c]
+    const classes = ['cell']
+    let text = ''
+    let color = ''
+
+    if (data.revealed) {
+      classes.push('revealed')
+      if (data.mine) {
+        classes.push('mine')
+        if (data.exploded) classes.push('exploded')
+        text = '💣'
+      } else if (data.adjacentMines > 0) {
+        classes.push('shown-number')
+        color = NUMBER_COLORS[data.adjacentMines]
+        text = data.adjacentMines
+      }
+    } else {
+      classes.push('hidden')
+      if (data.flagged) {
+        classes.push('flagged')
+        text = '🚩'
+      } else if (data.questioned) {
+        classes.push('questioned')
+        text = '❓'
+      }
+    }
+
+    el.className = classes.join(' ')
+    el.style.color = color
+    if (el.textContent !== String(text)) el.textContent = text
+  }
+
+  setCursor(row, col) {
+    this.clearCursor()
+    if (row >= 0 && row < this.engine.rows && col >= 0 && col < this.engine.cols) {
+      this.cursor = { row, col }
+      const el = this.cellElements[row]?.[col]
+      if (el) el.classList.add('cursor')
+    }
+  }
+
+  clearCursor() {
+    const el = this.cellElements[this.cursor.row]?.[this.cursor.col]
+    if (el) el.classList.remove('cursor')
   }
 
   onLeftClick(row, col) {
@@ -148,16 +205,20 @@ class UIRenderer {
       const row = parseInt(cell.dataset.row)
       const col = parseInt(cell.dataset.col)
       if (row === target.row && col === target.col) {
-        const eng = this.engine
-        if (eng.state === 'playing') {
-          const didChord = eng.chord(row, col)
-          this.onStateChange(eng.state)
-          if (didChord) this.audio.chordSuccess()
-          else this.audio.chordFail()
-          this.render()
-          if (!didChord) this.animateFailedChord(row, col)
-        }
+        this.doChord(row, col)
       }
+    }
+  }
+
+  doChord(row, col) {
+    const eng = this.engine
+    if (eng.state === 'playing') {
+      const didChord = eng.chord(row, col)
+      this.onStateChange(eng.state)
+      if (didChord) this.audio.chordSuccess()
+      else this.audio.chordFail()
+      this.render()
+      if (!didChord) this.animateFailedChord(row, col)
     }
   }
 
@@ -166,7 +227,7 @@ class UIRenderer {
       for (let dc = -1; dc <= 1; dc++) {
         const r = row + dr, c = col + dc
         if (r >= 0 && r < this.engine.rows && c >= 0 && c < this.engine.cols) {
-          const el = this.container.querySelector(`[data-row="${r}"][data-col="${c}"]`)
+          const el = this.cellElements[r]?.[c]
           if (el) {
             if (pressed) el.classList.add('pressed')
             else el.classList.remove('pressed')
@@ -177,16 +238,7 @@ class UIRenderer {
   }
 
   onDoubleClick(row, col) {
-    const eng = this.engine
-    if (eng.state === 'won' || eng.state === 'lost') return
-    if (eng.state === 'playing') {
-      const didChord = eng.chord(row, col)
-      this.onStateChange(eng.state)
-      if (didChord) this.audio.chordSuccess()
-      else this.audio.chordFail()
-      this.render()
-      if (!didChord) this.animateFailedChord(row, col)
-    }
+    this.doChord(row, col)
   }
 
   animateFailedChord(row, col) {
@@ -199,7 +251,7 @@ class UIRenderer {
         if (r >= 0 && r < this.engine.rows && c >= 0 && c < this.engine.cols) {
           const neighbor = this.engine.board[r][c]
           if (!neighbor.revealed) {
-            const el = this.container.querySelector(`[data-row="${r}"][data-col="${c}"]`)
+            const el = this.cellElements[r]?.[c]
             if (el) {
               el.classList.add('shake')
               setTimeout(() => el.classList.remove('shake'), 350)
