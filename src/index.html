@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>扫雷</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <div id="header">
+      <div id="mine-counter" class="led">010</div>
+      <button id="face-button">🙂</button>
+      <div id="timer" class="led">000</div>
+      <div class="sep"></div>
+      <div id="controls">
+        <button class="diff-btn active" data-level="beginner">初级</button>
+        <button class="diff-btn" data-level="intermediate">中级</button>
+        <button class="diff-btn" data-level="expert">高级</button>
+      </div>
+    </div>
+    <div id="board"></div>
+  </div>
+  <script src="game.js"></script>
+  <script src="ui.js"></script>
+  <script>
+    const game = new GameEngine()
+    const ui = new UIRenderer(game)
+    let timerInterval = null
+
+    function startTimer() {
+      if (timerInterval) return
+      timerInterval = setInterval(() => {
+        if (game.state === 'playing') {
+          game.timer++
+          if (game.timer > 999) game.timer = 999
+          document.getElementById('timer').textContent = String(game.timer).padStart(3, '0')
+        }
+      }, 1000)
+    }
+
+    function stopTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval)
+        timerInterval = null
+      }
+    }
+
+    function fitWindow() {
+      if (!window.electronAPI) return
+      const pad = 40
+      const boardW = game.cols * 28 + pad
+      const boardH = game.rows * 28 + 120
+      window.electronAPI.resize(
+        Math.max(350, Math.min(1200, boardW)),
+        Math.max(300, Math.min(900, boardH))
+      )
+    }
+
+    function resetGame(level) {
+      game.init(level)
+      stopTimer()
+      ui.render()
+      setTimeout(fitWindow, 50)
+    }
+
+    document.querySelectorAll('.diff-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        resetGame(btn.dataset.level)
+      })
+    })
+
+    document.getElementById('face-button').addEventListener('click', () => {
+      resetGame(game.currentLevel)
+    })
+
+    const origReveal = game.reveal.bind(game)
+    game.reveal = function(row, col) {
+      const wasReady = this.state === 'ready'
+      origReveal(row, col)
+      if (wasReady && this.minesPlaced) startTimer()
+      if (this.state === 'lost' || this.state === 'won') stopTimer()
+      ui.render()
+    }
+
+    const origToggle = game.toggleFlag.bind(game)
+    game.toggleFlag = function(row, col) {
+      const wasReady = this.state === 'ready'
+      origToggle(row, col)
+      if (wasReady && this.state === 'playing') startTimer()
+      if (this.state === 'won') stopTimer()
+      ui.render()
+    }
+
+    ui.render()
+    setTimeout(fitWindow, 100)
+  </script>
+</body>
+</html>
