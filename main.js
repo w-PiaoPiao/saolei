@@ -11,7 +11,6 @@ function createMenu() {
       submenu: [
         {
           label: '新游戏',
-          accelerator: 'F2',
           click: () => mainWindow.webContents.send('menu-action', { action: 'new-game' })
         },
         {
@@ -19,6 +18,10 @@ function createMenu() {
           type: 'checkbox',
           checked: false,
           click: (item) => mainWindow.webContents.send('menu-action', { action: 'toggle-mute', value: item.checked })
+        },
+        {
+          label: '键盘快捷键...',
+          click: () => mainWindow.webContents.send('menu-action', { action: 'keybindings' })
         },
         { type: 'separator' },
         { role: 'quit', label: '退出' }
@@ -63,6 +66,26 @@ function createMenu() {
           label: '深色',
           type: 'radio',
           click: () => mainWindow.webContents.send('menu-action', { action: 'theme', value: 'dark' })
+        },
+        {
+          label: 'WinXP 银灰',
+          type: 'radio',
+          click: () => mainWindow.webContents.send('menu-action', { action: 'theme', value: 'xp-silver' })
+        },
+        {
+          label: 'Vista 蓝',
+          type: 'radio',
+          click: () => mainWindow.webContents.send('menu-action', { action: 'theme', value: 'vista' })
+        },
+        {
+          label: 'macOS',
+          type: 'radio',
+          click: () => mainWindow.webContents.send('menu-action', { action: 'theme', value: 'macos' })
+        },
+        {
+          label: 'macOS 深色',
+          type: 'radio',
+          click: () => mainWindow.webContents.send('menu-action', { action: 'theme', value: 'macos-dark' })
         }
       ]
     },
@@ -99,13 +122,23 @@ function updateMenuDifficulty(level) {
   })
 }
 
+const THEME_LABELS = {
+  light: '浅色',
+  dark: '深色',
+  'xp-silver': 'WinXP 银灰',
+  vista: 'Vista 蓝',
+  macos: 'macOS',
+  'macos-dark': 'macOS 深色'
+}
+
 function updateMenuTheme(theme) {
   const menu = Menu.getApplicationMenu()
   if (!menu) return
   const themeMenu = menu.items.find(m => m.label === '主题')
   if (!themeMenu) return
+  const label = THEME_LABELS[theme] || '浅色'
   themeMenu.submenu.items.forEach(item => {
-    if (item.type === 'radio') item.checked = item.label === (theme === 'light' ? '浅色' : '深色')
+    if (item.type === 'radio') item.checked = item.label === label
   })
 }
 

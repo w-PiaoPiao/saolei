@@ -27,8 +27,12 @@ class UIRenderer {
     this.lastCols = 0
     this.cellElements = []
     this.cursor = { row: 0, col: 0 }
+    this.cursorVisible = false
 
-    this.container.addEventListener('mousedown', (e) => this.onMouseDown(e))
+    this.container.addEventListener('mousedown', (e) => {
+      this.hideCursor()
+      this.onMouseDown(e)
+    })
     this.container.addEventListener('mouseup', (e) => this.onMouseUp(e))
   }
 
@@ -39,12 +43,11 @@ class UIRenderer {
     }
     if (newState === 'won') {
       this.engine.autoFlagRemainingMines()
+      this.engine.revealAllSafe()
       this.stats.onGameWin(this.engine.timer)
-      this.audio.win()
     }
     if (newState === 'lost') {
       this.stats.onGameLose(this.engine.timer)
-      this.audio.explosion()
     }
     this.prevState = newState
   }
@@ -59,6 +62,7 @@ class UIRenderer {
         }
       }
     }
+    this.highlightCursor()
     this.updateHUD()
     this.updateDifficultyButtons()
   }
@@ -130,12 +134,18 @@ class UIRenderer {
       }
     }
 
+    const wasHidden = !el.classList.contains('revealed')
     el.className = classes.join(' ')
     el.style.color = color
     if (el.textContent !== String(text)) el.textContent = text
+    if (wasHidden && data.revealed && !data.mine) {
+      el.classList.add('reveal-anim')
+      el.addEventListener('animationend', () => el.classList.remove('reveal-anim'), { once: true })
+    }
   }
 
   setCursor(row, col) {
+    this.cursorVisible = true
     this.clearCursor()
     if (row >= 0 && row < this.engine.rows && col >= 0 && col < this.engine.cols) {
       this.cursor = { row, col }
@@ -149,6 +159,19 @@ class UIRenderer {
     if (el) el.classList.remove('cursor')
   }
 
+  hideCursor() {
+    this.cursorVisible = false
+    this.clearCursor()
+  }
+
+  highlightCursor() {
+    if (!this.cursorVisible) return
+    const { row, col } = this.cursor
+    if (row < 0 || row >= this.engine.rows || col < 0 || col >= this.engine.cols) return
+    const el = this.cellElements[row]?.[col]
+    if (el) el.classList.add('cursor')
+  }
+
   onLeftClick(row, col) {
     if (this.suppressClick) {
       this.suppressClick = false
@@ -159,7 +182,9 @@ class UIRenderer {
     if (eng.state === 'ready' || eng.state === 'playing') {
       eng.reveal(row, col)
       this.onStateChange(eng.state)
-      if (eng.state === 'playing' || eng.state === 'ready') this.audio.click()
+      if (eng.state === 'lost') this.audio.explosion()
+      else if (eng.state === 'won') this.audio.win()
+      else this.audio.click()
       this.render()
     }
   }
@@ -174,7 +199,8 @@ class UIRenderer {
     if (eng.state === 'ready' || eng.state === 'playing') {
       eng.toggleFlag(row, col)
       this.onStateChange(eng.state)
-      this.audio.flag()
+      if (eng.state === 'won') this.audio.win()
+      else this.audio.flag()
       this.render()
     }
   }
@@ -215,10 +241,17 @@ class UIRenderer {
     if (eng.state === 'playing') {
       const didChord = eng.chord(row, col)
       this.onStateChange(eng.state)
-      if (didChord) this.audio.chordSuccess()
-      else this.audio.chordFail()
       this.render()
-      if (!didChord) this.animateFailedChord(row, col)
+      if (eng.state === 'won') {
+        this.audio.win()
+      } else if (eng.state === 'lost') {
+        this.audio.explosion()
+      } else if (didChord) {
+        this.audio.chordSuccess()
+      } else {
+        this.audio.chordFail()
+        this.animateFailedChord(row, col)
+      }
     }
   }
 
@@ -269,7 +302,11 @@ class UIRenderer {
 
   updateHUD() {
     const remaining = this.engine.totalMines - this.engine.flagCount
-    this.mineCounter.textContent = String(Math.max(remaining, 0)).padStart(3, '0')
+    if (remaining < 0) {
+      this.mineCounter.textContent = '-' + String(Math.abs(remaining)).padStart(2, '0')
+    } else {
+      this.mineCounter.textContent = String(remaining).padStart(3, '0')
+    }
     this.timerDisplay.textContent = String(this.engine.timer).padStart(3, '0')
     this.faceButton.textContent = FACE_STATES[this.engine.state]
   }

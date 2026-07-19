@@ -209,6 +209,18 @@ class GameEngine {
     }
   }
 
+  revealAllSafe() {
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const cell = this.board[r][c]
+        if (!cell.mine && !cell.revealed) {
+          cell.revealed = true
+          this.revealedCount++
+        }
+      }
+    }
+  }
+
   autoFlagRemainingMines() {
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
@@ -223,6 +235,16 @@ class GameEngine {
 
   checkWin() {
     const totalSafe = this.rows * this.cols - this.totalMines
-    return this.revealedCount >= totalSafe
+    if (this.revealedCount >= totalSafe) return true
+    if (this.flagCount === this.totalMines) {
+      for (let r = 0; r < this.rows; r++) {
+        for (let c = 0; c < this.cols; c++) {
+          const cell = this.board[r][c]
+          if (cell.flagged !== cell.mine) return false
+        }
+      }
+      return true
+    }
+    return false
   }
 }

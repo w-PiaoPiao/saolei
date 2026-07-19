@@ -20,16 +20,21 @@
       </div>
     </div>
     <div id="board"></div>
+    <div id="pause-overlay">
+      <div id="pause-text">⏸ 已暂停</div>
+    </div>
   </div>
 
   <script src="game.js"></script>
   <script src="audio.js"></script>
   <script src="stats.js"></script>
+  <script src="keybindings.js"></script>
   <script src="ui.js"></script>
   <script>
     const game = new GameEngine()
     const audio = new AudioManager()
     const stats = new StatsManager()
+    const bindings = new KeyBindings()
     const ui = new UIRenderer(game, audio, stats)
     let timerInterval = null
 
@@ -200,13 +205,66 @@
       })
     }
 
+    function showKeyBindingsDialog() {
+      const overlay = document.createElement('div')
+      overlay.className = 'dialog-overlay'
+
+      const rows = Object.entries(bindings.getBindings()).map(([action, data]) => `
+        <div class="bind-row">
+          <span class="bind-label">${data.label}</span>
+          <button class="bind-key" data-action="${action}">${bindings.getDisplayKey(action)}</button>
+        </div>
+      `).join('')
+
+      overlay.innerHTML = `
+        <div class="dialog" style="min-width:320px">
+          <h2>键盘快捷键</h2>
+          ${rows}
+          <div class="actions" style="margin-top:8px">
+            <button class="btn" id="bind-reset">恢复默认</button>
+            <button class="btn" id="bind-close">关闭</button>
+          </div>
+        </div>
+      `
+      document.body.appendChild(overlay)
+
+      document.getElementById('bind-close').addEventListener('click', () => {
+        document.body.removeChild(overlay)
+      })
+
+      document.getElementById('bind-reset').addEventListener('click', () => {
+        bindings.reset()
+        bindings.save()
+        overlay.querySelectorAll('.bind-key').forEach(btn => {
+          btn.textContent = bindings.getDisplayKey(btn.dataset.action)
+        })
+      })
+
+      overlay.querySelectorAll('.bind-key').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (listeningForBind) return
+          listeningForBind = btn.dataset.action
+          btn.classList.add('listening')
+          btn.textContent = '按下新键...'
+        })
+      })
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) document.body.removeChild(overlay)
+      })
+
+      setTimeout(() => overlay.querySelector('#bind-close').focus(), 50)
+    }
+
     document.querySelectorAll('.diff-btn').forEach(btn => {
       btn.addEventListener('click', () => {
+        ui.hideCursor()
         resetGame(btn.dataset.level)
       })
     })
 
     document.getElementById('face-button').addEventListener('click', () => {
+      ui.hideCursor()
       resetGame(game.currentLevel)
     })
 
@@ -228,54 +286,100 @@
       ui.render()
     }
 
-    function setupKeyboard() {
-      ui.setCursor(0, 0)
-      document.addEventListener('keydown', (e) => {
-        const isTyping = ['INPUT', 'TEXTAREA'].includes(e.target.tagName)
-        if (isTyping) return
+    let listeningForBind = null
 
-        const { row, col } = ui.cursor
-        switch (e.key) {
-          case 'ArrowUp':
-            e.preventDefault()
-            ui.setCursor(Math.max(0, row - 1), col)
-            break
-          case 'ArrowDown':
-            e.preventDefault()
-            ui.setCursor(Math.min(game.rows - 1, row + 1), col)
-            break
-          case 'ArrowLeft':
-            e.preventDefault()
-            ui.setCursor(row, Math.max(0, col - 1))
-            break
-          case 'ArrowRight':
-            e.preventDefault()
-            ui.setCursor(row, Math.min(game.cols - 1, col + 1))
-            break
-          case ' ':
-          case 'Enter':
-            e.preventDefault()
-            {
-              const cell = game.board[row]?.[col]
-              if (cell && cell.revealed && cell.adjacentMines > 0) {
-                ui.doChord(row, col)
-              } else {
-                ui.onLeftClick(row, col)
-              }
-            }
-            break
-          case 'f':
-          case 'F':
-            e.preventDefault()
-            ui.onRightClick(row, col)
-            break
-          case 'F2':
-            e.preventDefault()
-            resetGame(game.currentLevel)
-            break
+    document.addEventListener('keydown', (e) => {
+      const isTyping = ['INPUT', 'TEXTAREA'].includes(e.target.tagName)
+      if (isTyping) return
+
+      if (listeningForBind) {
+        if (e.key === 'Escape') {
+          listeningForBind = null
+          document.querySelectorAll('.bind-key.listening').forEach(btn => {
+            btn.classList.remove('listening')
+            btn.textContent = bindings.getDisplayKey(btn.dataset.action)
+          })
+          return
         }
-      })
+        const action = listeningForBind
+        const conflict = bindings.findConflict(action, e.key)
+        if (conflict) {
+          alert(`"${bindings.getDisplayKey(action)}" 已被「${bindings.defaults[conflict].label}」占用`)
+          listeningForBind = null
+          document.querySelectorAll('.bind-key.listening').forEach(btn => {
+            btn.classList.remove('listening')
+            btn.textContent = bindings.getDisplayKey(btn.dataset.action)
+          })
+          return
+        }
+        bindings.setKey(action, e.key)
+        listeningForBind = null
+        document.querySelectorAll('.bind-key').forEach(btn => {
+          btn.classList.remove('listening')
+          btn.textContent = bindings.getDisplayKey(btn.dataset.action)
+        })
+        e.preventDefault()
+        return
+      }
+
+      if (e.key === 'Escape') {
+        const overlay = document.querySelector('.dialog-overlay')
+        if (overlay) overlay.remove()
+        return
+      }
+
+      if (document.getElementById('pause-overlay').classList.contains('visible')) return
+
+      const { row, col } = ui.cursor
+      if (row < 0 || row >= game.rows || col < 0 || col >= game.cols) return
+      const action = bindings.getActionForKey(e.key)
+      if (!action) return
+      e.preventDefault()
+
+      switch (action) {
+        case 'moveUp':
+          ui.setCursor(Math.max(0, row - 1), col)
+          break
+        case 'moveDown':
+          ui.setCursor(Math.min(game.rows - 1, row + 1), col)
+          break
+        case 'moveLeft':
+          ui.setCursor(row, Math.max(0, col - 1))
+          break
+        case 'moveRight':
+          ui.setCursor(row, Math.min(game.cols - 1, col + 1))
+          break
+        case 'activate': {
+          const cell = game.board[row]?.[col]
+          if (cell && cell.revealed && cell.adjacentMines > 0) {
+            ui.doChord(row, col)
+          } else {
+            ui.onLeftClick(row, col)
+          }
+          break
+        }
+        case 'flag':
+          ui.onRightClick(row, col)
+          break
+        case 'newGame':
+          resetGame(game.currentLevel)
+          break
+      }
+    })
+
+    function pauseGame() {
+      if (game.state !== 'playing') return
+      stopTimer()
+      document.getElementById('pause-overlay').classList.add('visible')
     }
+
+    function resumeGame() {
+      document.getElementById('pause-overlay').classList.remove('visible')
+      if (game.state === 'playing') startTimer()
+    }
+
+    window.addEventListener('blur', pauseGame)
+    window.addEventListener('focus', resumeGame)
 
     function setMute(muted) {
       audio.enabled = !muted
@@ -297,7 +401,6 @@
             break
           case 'theme':
             ui.setTheme(data.value)
-            if (window.electronAPI) window.electronAPI.updateMenuTheme(data.value)
             break
           case 'toggle-mute':
             setMute(data.value)
@@ -307,6 +410,9 @@
             break
           case 'about':
             showAboutDialog()
+            break
+          case 'keybindings':
+            showKeyBindingsDialog()
             break
         }
       })
@@ -324,7 +430,6 @@
     }
 
     ui.render()
-    setupKeyboard()
     setTimeout(fitWindow, 100)
   </script>
 </body>
