@@ -12,6 +12,7 @@
   --overlay: rgba(0,0,0,0.5);
   --dialog-bg: #C0C0C0;
   --input-bg: #FFF;
+  --cell-size: 28px;
 }
 
 [data-theme="dark"] {
@@ -122,6 +123,10 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  /* 窗口过小时棋盘仍可滚动触达，而不是被裁掉 */
+  max-width: 100vw;
+  max-height: 100vh;
+  overflow: auto;
 }
 
 #header {
@@ -172,6 +177,12 @@ body {
   border-color: var(--border-dark) var(--border-light) var(--border-light) var(--border-dark);
 }
 
+#face-button svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
 #board {
   display: grid;
   gap: 0;
@@ -180,12 +191,12 @@ body {
 }
 
 .cell {
-  width: 28px;
-  height: 28px;
+  width: var(--cell-size);
+  height: var(--cell-size);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: calc(var(--cell-size) * 0.5);
   font-weight: bold;
   cursor: pointer;
   background: var(--bg-cell);
@@ -216,7 +227,7 @@ body {
 
 .cell.mine {
   background: var(--bg-revealed);
-  font-size: 16px;
+  font-size: calc(var(--cell-size) * 0.57);
 }
 
 .cell.exploded {
@@ -224,7 +235,7 @@ body {
 }
 
 .cell.flagged, .cell.questioned {
-  font-size: 14px;
+  font-size: calc(var(--cell-size) * 0.5);
 }
 
 .cell.shake {
@@ -321,6 +332,34 @@ body {
   min-width: 300px;
   font-family: 'Courier New', monospace;
   color: var(--color-text);
+}
+
+.dialog.wide {
+  min-width: 320px;
+}
+
+.dialog.narrow {
+  min-width: 280px;
+}
+
+.dialog .error {
+  min-height: 18px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #C00000;
+}
+
+[data-theme="dark"] .dialog .error,
+[data-theme="macos-dark"] .dialog .error {
+  color: #FF7A7A;
+}
+
+.dialog p.mt {
+  margin-top: 8px;
+}
+
+.dialog p.small {
+  font-size: 12px;
 }
 
 .dialog h2 {

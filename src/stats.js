@@ -1,6 +1,6 @@
 class StatsManager {
   constructor() {
-    this.key = 'minesweeper_stats'
+    this.key = CONFIG.STORAGE_KEYS.stats
     this.data = this.load()
   }
 

@@ -1,28 +1,29 @@
 const { app, BrowserWindow, Menu, ipcMain } = require('electron')
 const path = require('path')
+const { LEVELS, THEMES, WINDOW } = require('./src/config.js')
 
-let mainWindow
+let mainWindow = null
 let muteMenuItem = null
+
+function sendToRenderer(action, payload = {}) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('menu-action', { action, ...payload })
+  }
+}
 
 function createMenu() {
   const template = [
     {
       label: '游戏',
       submenu: [
-        {
-          label: '新游戏',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'new-game' })
-        },
+        { label: '新游戏', click: () => sendToRenderer('new-game') },
         {
           label: '静音',
           type: 'checkbox',
           checked: false,
-          click: (item) => mainWindow.webContents.send('menu-action', { action: 'toggle-mute', value: item.checked })
+          click: (item) => sendToRenderer('toggle-mute', { value: item.checked })
         },
-        {
-          label: '键盘快捷键...',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'keybindings' })
-        },
+        { label: '键盘快捷键...', click: () => sendToRenderer('keybindings') },
         { type: 'separator' },
         { role: 'quit', label: '退出' }
       ]
@@ -30,114 +31,64 @@ function createMenu() {
     {
       label: '难度',
       submenu: [
-        {
-          label: '初级 (9×9/10雷)',
-          type: 'radio',
-          checked: true,
-          click: () => mainWindow.webContents.send('menu-action', { action: 'difficulty', level: 'beginner' })
-        },
-        {
-          label: '中级 (16×16/40雷)',
-          type: 'radio',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'difficulty', level: 'intermediate' })
-        },
-        {
-          label: '高级 (16×30/99雷)',
-          type: 'radio',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'difficulty', level: 'expert' })
-        },
+        ...Object.keys(LEVELS).map((level) => {
+          const cfg = LEVELS[level]
+          return {
+            label: `${cfg.label} (${cfg.rows}×${cfg.cols}/${cfg.mines}雷)`,
+            type: 'radio',
+            checked: level === 'beginner',
+            click: () => sendToRenderer('difficulty', { level })
+          }
+        }),
         { type: 'separator' },
-        {
-          label: '自定义...',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'custom' })
-        }
+        { label: '自定义...', click: () => sendToRenderer('custom') }
       ]
     },
     {
       label: '主题',
-      submenu: [
-        {
-          label: '浅色',
-          type: 'radio',
-          checked: true,
-          click: () => mainWindow.webContents.send('menu-action', { action: 'theme', value: 'light' })
-        },
-        {
-          label: '深色',
-          type: 'radio',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'theme', value: 'dark' })
-        },
-        {
-          label: 'WinXP 银灰',
-          type: 'radio',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'theme', value: 'xp-silver' })
-        },
-        {
-          label: 'Vista 蓝',
-          type: 'radio',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'theme', value: 'vista' })
-        },
-        {
-          label: 'macOS',
-          type: 'radio',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'theme', value: 'macos' })
-        },
-        {
-          label: 'macOS 深色',
-          type: 'radio',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'theme', value: 'macos-dark' })
-        }
-      ]
+      submenu: THEMES.map((theme, i) => ({
+        label: theme.label,
+        type: 'radio',
+        checked: i === 0,
+        click: () => sendToRenderer('theme', { value: theme.value })
+      }))
     },
     {
       label: '帮助',
       submenu: [
-        {
-          label: '游戏统计',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'stats' })
-        },
+        { label: '游戏统计', click: () => sendToRenderer('stats') },
         { type: 'separator' },
-        {
-          label: '关于扫雷',
-          click: () => mainWindow.webContents.send('menu-action', { action: 'about' })
-        }
+        { label: '关于扫雷', click: () => sendToRenderer('about') }
       ]
     }
   ]
 
   const menu = Menu.buildFromTemplate(template)
-  muteMenuItem = menu.items.find(m => m.label === '游戏').submenu.items.find(m => m.label === '静音')
+  muteMenuItem = menu.items
+    .find((m) => m.label === '游戏')
+    .submenu.items.find((m) => m.label === '静音')
   Menu.setApplicationMenu(menu)
 }
 
 function updateMenuDifficulty(level) {
-  const labelMap = { beginner: '初级', intermediate: '中级', expert: '高级' }
-  const label = labelMap[level] || '自定义'
+  const label = LEVELS[level] ? LEVELS[level].label : '自定义'
   const menu = Menu.getApplicationMenu()
   if (!menu) return
-  const diffMenu = menu.items.find(m => m.label === '难度')
+  const diffMenu = menu.items.find((m) => m.label === '难度')
   if (!diffMenu) return
-  diffMenu.submenu.items.forEach(item => {
+  diffMenu.submenu.items.forEach((item) => {
     if (item.type === 'radio') item.checked = item.label.startsWith(label)
   })
 }
 
-const THEME_LABELS = {
-  light: '浅色',
-  dark: '深色',
-  'xp-silver': 'WinXP 银灰',
-  vista: 'Vista 蓝',
-  macos: 'macOS',
-  'macos-dark': 'macOS 深色'
-}
-
 function updateMenuTheme(theme) {
+  const def = THEMES.find((t) => t.value === theme)
+  const label = def ? def.label : THEMES[0].label
   const menu = Menu.getApplicationMenu()
   if (!menu) return
-  const themeMenu = menu.items.find(m => m.label === '主题')
+  const themeMenu = menu.items.find((m) => m.label === '主题')
   if (!themeMenu) return
-  const label = THEME_LABELS[theme] || '浅色'
-  themeMenu.submenu.items.forEach(item => {
+  themeMenu.submenu.items.forEach((item) => {
     if (item.type === 'radio') item.checked = item.label === label
   })
 }
@@ -150,44 +101,55 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 860,
     height: 680,
+    minWidth: 350,
+    minHeight: 300,
     resizable: true,
     title: '扫雷',
     icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true
     }
   })
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'))
-  createMenu()
-
-  ipcMain.on('resize', (_, width, height) => {
-    mainWindow.setSize(width, height)
-  })
-
-  ipcMain.on('update-menu-difficulty', (_, level) => {
-    updateMenuDifficulty(level)
-  })
-
-  ipcMain.on('update-menu-theme', (_, theme) => {
-    updateMenuTheme(theme)
-  })
-
-  ipcMain.on('update-menu-mute', (_, muted) => {
-    updateMenuMute(muted)
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
+  mainWindow.on('closed', () => {
+    mainWindow = null
   })
 }
 
-app.whenReady().then(createWindow)
+// ---------- IPC（顶层注册一次） ----------
+
+// 只放大不缩小：不覆盖用户手动调整的窗口尺寸
+ipcMain.on('fit-window', (event, width, height) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return
+  const [w, h] = win.getSize()
+  win.setSize(
+    Math.max(w, Math.min(WINDOW.maxW, Math.round(width))),
+    Math.max(h, Math.min(WINDOW.maxH, Math.round(height)))
+  )
+})
+
+ipcMain.on('update-menu-difficulty', (_, level) => updateMenuDifficulty(level))
+ipcMain.on('update-menu-theme', (_, theme) => updateMenuTheme(theme))
+ipcMain.on('update-menu-mute', (_, muted) => updateMenuMute(muted))
+
+// ---------- 生命周期 ----------
+
+app.whenReady().then(() => {
+  createMenu()
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
-  app.quit()
+  if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow()
-  }
+  if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })

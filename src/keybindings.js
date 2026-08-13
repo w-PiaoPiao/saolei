@@ -14,7 +14,7 @@ function formatKey(key) {
 
 class KeyBindings {
   constructor() {
-    this.key = 'minesweeper_bindings'
+    this.key = CONFIG.STORAGE_KEYS.bindings
     this.defaults = {
       moveUp: { key: 'ArrowUp', label: '上移' },
       moveDown: { key: 'ArrowDown', label: '下移' },

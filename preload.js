@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
-  resize: (width, height) => ipcRenderer.send('resize', width, height),
+  fitWindow: (width, height) => ipcRenderer.send('fit-window', width, height),
   onMenuAction: (callback) => {
     ipcRenderer.on('menu-action', (_, data) => callback(data))
   },
