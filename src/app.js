@@ -77,6 +77,7 @@
   // ---------- 对话框 ----------
 
   function showDialog(innerHTML, extraClass) {
+    clearHeldMoves()
     const overlay = document.createElement('div')
     overlay.className = 'dialog-overlay'
     const dialog = document.createElement('div')
@@ -248,6 +249,42 @@
 
   // ---------- 键盘 ----------
 
+  // 方向移动：记录所有按下的方向键，合成方向向量。
+  // 系统键重复只作用于最后按下的键，无法支持斜向，因此长按重复由自己的定时器驱动。
+  const MOVE_ACTIONS = ['moveUp', 'moveDown', 'moveLeft', 'moveRight']
+  const heldMoves = new Set()
+  let moveDelayTimer = null
+  let moveRepeatTimer = null
+
+  function stopMoveTimers() {
+    if (moveDelayTimer) {
+      clearTimeout(moveDelayTimer)
+      moveDelayTimer = null
+    }
+    if (moveRepeatTimer) {
+      clearInterval(moveRepeatTimer)
+      moveRepeatTimer = null
+    }
+  }
+
+  function clearHeldMoves() {
+    heldMoves.clear()
+    stopMoveTimers()
+  }
+
+  function stepMove() {
+    const next = combineDirections(heldMoves, game.rows, game.cols, ui.cursor.row, ui.cursor.col)
+    if (next) ui.setCursor(next.row, next.col)
+  }
+
+  function startMoveRepeat() {
+    stopMoveTimers()
+    moveDelayTimer = setTimeout(() => {
+      moveDelayTimer = null
+      moveRepeatTimer = setInterval(stepMove, CONFIG.KEYBOARD.repeatInterval)
+    }, CONFIG.KEYBOARD.repeatDelay)
+  }
+
   document.addEventListener('keydown', (e) => {
     const isTyping = ['INPUT', 'TEXTAREA'].includes(e.target.tagName)
     if (isTyping) return
@@ -299,19 +336,18 @@
     if (!action) return
     e.preventDefault()
 
+    // 方向键：加入按住集合，立即走一步（组合键即斜向，如 左+上 → 左上）。
+    // 忽略系统键重复（e.repeat），长按重复由 startMoveRepeat 的定时器驱动。
+    if (MOVE_ACTIONS.includes(action)) {
+      if (!e.repeat) {
+        heldMoves.add(action)
+        stepMove()
+        startMoveRepeat()
+      }
+      return
+    }
+
     switch (action) {
-      case 'moveUp':
-        ui.setCursor(Math.max(0, row - 1), col)
-        break
-      case 'moveDown':
-        ui.setCursor(Math.min(game.rows - 1, row + 1), col)
-        break
-      case 'moveLeft':
-        ui.setCursor(row, Math.max(0, col - 1))
-        break
-      case 'moveRight':
-        ui.setCursor(row, Math.min(game.cols - 1, col + 1))
-        break
       case 'activate': {
         const cell = game.board[row]?.[col]
         if (cell && cell.revealed && cell.adjacentMines > 0) {
@@ -330,9 +366,22 @@
     }
   })
 
+  // 松开方向键：从按住集合移除；仍有其他方向按住时立即按新方向走一步
+  window.addEventListener('keyup', (e) => {
+    const action = bindings.getActionForKey(e.key)
+    if (!action || !MOVE_ACTIONS.includes(action)) return
+    heldMoves.delete(action)
+    if (heldMoves.size === 0) {
+      stopMoveTimers()
+    } else {
+      stepMove()
+    }
+  })
+
   // ---------- 暂停（窗口失焦） ----------
 
   function pauseGame() {
+    clearHeldMoves()
     if (game.state !== 'playing') return
     stopTimer()
     document.getElementById('pause-overlay').classList.add('visible')

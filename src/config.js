@@ -37,6 +37,12 @@
       max: 28
     },
 
+    // 键盘移动：长按后的自动重复节奏（近似系统键重复）
+    KEYBOARD: {
+      repeatDelay: 500,
+      repeatInterval: 40
+    },
+
     // 窗口自适应参数（主进程与渲染进程共用）
     WINDOW: {
       maxW: 1200,
