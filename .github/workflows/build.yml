@@ -3,7 +3,8 @@ name: Build & Release
 on:
   push:
     tags:
-      - 'v*'
+      # 桌面版发布用 desktop-v* 标签（如 desktop-v1.3.0），避免与安卓版 v* 标签冲突
+      - 'desktop-v*'
   workflow_dispatch:
 
 jobs:
