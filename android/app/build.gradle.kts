@@ -1,3 +1,4 @@
+import java.util.Base64
 import java.util.Properties
 
 plugins {
@@ -36,7 +37,7 @@ android {
                     )
                     if (!ks.exists()) {
                         ks.parentFile?.mkdirs()
-                        ks.writeBytes(java.util.Base64.getDecoder().decode(base64))
+                        ks.writeBytes(Base64.getDecoder().decode(base64))
                     }
                     storeFile = ks
                     storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: ""
