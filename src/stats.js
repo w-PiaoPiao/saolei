@@ -1,6 +1,9 @@
 class StatsManager {
-  constructor() {
-    this.key = CONFIG.STORAGE_KEYS.stats
+  // 存储与配置走依赖注入（浏览器缺省用全局 localStorage/CONFIG），
+  // 与安卓版 Storage + FakeStorage 模式对齐，node:test 可直接实例化。
+  constructor(storage = globalThis.localStorage, config = globalThis.CONFIG) {
+    this.storage = storage
+    this.key = config.STORAGE_KEYS.stats
     this.data = this.load()
   }
 
@@ -23,7 +26,7 @@ class StatsManager {
 
   load() {
     try {
-      const raw = localStorage.getItem(this.key)
+      const raw = this.storage.getItem(this.key)
       if (!raw) return this.defaults()
       return { ...this.defaults(), ...JSON.parse(raw) }
     } catch {
@@ -32,7 +35,7 @@ class StatsManager {
   }
 
   save() {
-    localStorage.setItem(this.key, JSON.stringify(this.data))
+    this.storage.setItem(this.key, JSON.stringify(this.data))
   }
 
   onGameStart(level) {
@@ -90,4 +93,9 @@ class StatsManager {
     this.data = this.defaults()
     this.save()
   }
+}
+
+// 浏览器端由 index.html <script> 加载为全局类；node:test 环境按 CommonJS 导出
+if (typeof module === 'object' && module.exports) {
+  module.exports = StatsManager
 }

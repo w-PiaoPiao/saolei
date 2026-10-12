@@ -5,6 +5,8 @@ on:
     tags:
       # 桌面版发布用 desktop-v* 标签（如 desktop-v1.3.0），避免与安卓版 v* 标签冲突
       - 'desktop-v*'
+  # PR 只跑单测（下方 build matrix 仅在 tag / 手动触发时执行）
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -20,6 +22,8 @@ jobs:
 
   build:
     needs: test
+    # PR 时只验证测试，不跑三平台打包
+    if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:

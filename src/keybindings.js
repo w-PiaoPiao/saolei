@@ -13,8 +13,11 @@ function formatKey(key) {
 }
 
 class KeyBindings {
-  constructor() {
-    this.key = CONFIG.STORAGE_KEYS.bindings
+  // 存储与配置走依赖注入（浏览器缺省用全局 localStorage/CONFIG），
+  // 与安卓版 Storage + FakeStorage 模式对齐，node:test 可直接实例化。
+  constructor(storage = globalThis.localStorage, config = globalThis.CONFIG) {
+    this.storage = storage
+    this.key = config.STORAGE_KEYS.bindings
     this.defaults = {
       moveUp: { key: 'ArrowUp', label: '上移' },
       moveDown: { key: 'ArrowDown', label: '下移' },
@@ -37,7 +40,7 @@ class KeyBindings {
 
   load() {
     try {
-      const saved = JSON.parse(localStorage.getItem(this.key))
+      const saved = JSON.parse(this.storage.getItem(this.key))
       if (!saved) return
       for (const [action, data] of Object.entries(saved)) {
         if (this.bindings[action]) {
@@ -52,7 +55,7 @@ class KeyBindings {
     for (const [action, data] of Object.entries(this.bindings)) {
       toStore[action] = { key: data.key }
     }
-    localStorage.setItem(this.key, JSON.stringify(toStore))
+    this.storage.setItem(this.key, JSON.stringify(toStore))
   }
 
   getKey(action) {
@@ -88,4 +91,9 @@ class KeyBindings {
   getBindings() {
     return { ...this.bindings }
   }
+}
+
+// 浏览器端由 index.html <script> 加载为全局类；node:test 环境按 CommonJS 导出
+if (typeof module === 'object' && module.exports) {
+  module.exports = KeyBindings
 }
