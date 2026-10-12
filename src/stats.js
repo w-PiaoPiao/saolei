@@ -43,6 +43,8 @@ class StatsManager {
       data.bestTime = { ...this.defaults().bestTime, ...data.bestTime }
       data.bestBbbvPerSec = { ...this.defaults().bestBbbvPerSec, ...data.bestBbbvPerSec }
       if (!Array.isArray(data.history)) data.history = []
+      // 空串不是合法难度名：归一为 null，避免被当成"有值但不存在"的难度而误报新纪录
+      if (typeof data.lastLevel !== 'string' || data.lastLevel === '') data.lastLevel = null
       return data
     } catch {
       return this.defaults()

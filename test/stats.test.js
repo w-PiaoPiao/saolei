@@ -189,3 +189,21 @@ test('旧存档缺 3BV 相关键时自动补齐', () => {
   assert.equal(s.bestBbbvPerSec.expert, null)
   assert.deepEqual(stats.data.history, [])
 })
+
+test('存档中的空串 lastLevel 归一为 null（避免误报新纪录）', () => {
+  const storage = fakeStorage()
+  storage.setItem(
+    CONFIG.STORAGE_KEYS.stats,
+    JSON.stringify({ totalGames: 1, gamesWon: 0, lastLevel: '' })
+  )
+  const stats = new StatsManager(storage, CONFIG)
+  assert.equal(stats.lastLevel, null)
+  assert.equal(stats.bestTimeOf(stats.lastLevel), null)
+})
+
+test('非字符串 lastLevel 同样归一为 null', () => {
+  const storage = fakeStorage()
+  storage.setItem(CONFIG.STORAGE_KEYS.stats, JSON.stringify({ lastLevel: 42 }))
+  const stats = new StatsManager(storage, CONFIG)
+  assert.equal(stats.lastLevel, null)
+})

@@ -12,14 +12,15 @@ Electron 跨平台桌面应用 / Cross-platform desktop app for macOS · Windows
 |---|---|
 | 三档难度：初级 9×9/10雷、中级 16×16/40雷、高级 16×30/99雷 | 3 preset difficulties: Beginner, Intermediate, Expert |
 | 自定义模式：自由设定行/列/雷数（最大 50×50） | Custom mode: configurable rows, cols & mines (up to 50×50) |
-| 超大棋盘自动缩放格子尺寸，窗口只放大不缩小 | Auto cell scaling for huge boards; window only grows, never shrinks |
+| 超大棋盘自动缩放格子尺寸（可读性下限 + 滚动兜底），窗口只放大不缩小 | Auto cell scaling with a readable floor and scroll fallback; window only grows |
+| 无猜生成在后台线程（worker）执行，首点不冻结界面并显示「生成中」 | No-guess generation runs in a worker thread; first click never freezes the UI |
 | 原生菜单栏（F2 新游戏） | Native menu bar (F2 for new game) |
 | 键盘全操作 + 可自定义快捷键 | Full keyboard control with rebindable keys |
 | 和弦操作：双击、中键或左右键同时按下 | Chord: double-click, middle-click, or left+right click on numbers |
 | 首次点击安全：3×3 无雷 + 空白格大面积展开 | Safe first click: 3×3 safe zone + guaranteed zero-cell |
 | Web Audio API 合成 6 种音效（零外部文件） | 6 Web Audio API sound effects (no external files) |
 | 游戏统计：总局、胜率、连胜、最快时间 | Game stats: games, win rate, streaks, best times |
-| 无猜模式：生成保证可纯逻辑推理通关的雷局 | No-guess mode: boards always solvable by pure logic |
+| 无猜模式：生成保证可纯逻辑推理通关的雷局；预算内未找到可解局时界面明示 | No-guess mode: boards always solvable by pure logic; HUD warns if generation falls back |
 | 3BV 效率统计：各难度最佳 3BV/s + 最近 20 局效率曲线 | 3BV efficiency: best 3BV/s per level + last-20-games chart |
 | 6 套主题切换（偏好持久化） | 6 themes (persistent preference) |
 | 和弦失败 shake 动画、左右键邻居格凹陷效果 | Shake animation on chord fail, press-down neighbor highlight |
@@ -77,12 +78,13 @@ Electron + Vanilla JavaScript + CSS3 + node:test (no framework dependencies)
 - **引擎移植**：`android/core` 纯 JVM 模块逐方法移植桌面版 `game.js` / `movement.js` / `keybindings.js` / `stats.js`，JUnit 单元测试覆盖
 - **手柄操作**：方向键移动（斜向 + 长按重复）、B=翻开/和弦、A=标雷（旗→问号→取消）、Start=新游戏、Select=菜单
 - **键位自定义**：菜单 → 键位设置，任意键可重绑（含按键测试屏），持久化保存
-- **无猜模式**：菜单开关；开启后布雷会反复重生成，直到求解器判定可纯逻辑通关（单点 + 子集 + 全局规则，保守判定，不会放出必猜局）
+- **无猜模式**：菜单开关；开启后布雷会反复重生成，直到求解器判定可纯逻辑通关（单点 + 子集 + 全局规则，保守判定）。生成在**后台线程**执行（界面不冻结，HUD 显示「正在生成无猜雷局…」）；大棋盘（如 50×50）或高雷密度下若在尝试次数与时间预算内未找到可解局，会在预估尝试次数不足时提前降级，沿用最后一次雷局并在 HUD 显示「⚠ 无解保护不可用」，不会静默降级
 - **3BV 效率统计与曲线**：统计页显示各难度最佳 3BV/s；菜单「效率曲线」查看最近 20 局折线（含平均线，左右键切换难度）
 - **防误触与终局反馈**：对局进行中重开（Start / 表情 / 菜单换难度）先弹确认框（默认停在「取消」）；失败时插错的旗打红叉，胜利破纪录弹「新纪录」横幅
 - **跟随系统深浅色**：未手动选过主题时跟随系统深/浅色（含运行中切换），在菜单里选过主题后固定
-- **性能**：棋盘静态层位图缓存（缓冲区复用），非动画帧只贴图 + 重绘变化格，50×50 大棋盘不再每帧重绘全部格子
-- **触摸增强**：底部难度按钮可直接点按（走与手柄一致的重开确认保护）；按下已翻开数字格预览和弦范围；超大棋盘（如 50×50）启用视口滚动，触摸拖动或手柄光标移动自动跟随浏览
+- **性能**：棋盘静态层位图缓存（缓冲区复用）并接入引擎脏标记——一次操作只重绘变化格，非动画帧只贴图；光标移动与计时秒跳改为局部失效；大洪泛（首点翻开上千格）超过阈值时跳过逐格动画。50×50 大棋盘不再每帧或每次操作重绘全部格子
+- **触摸增强**：**全部对话框支持触摸**（菜单项点按执行、自定义雷区的 ◀▶ 调整与确定/取消按钮、统计/关于/曲线点按关闭、键位行点按）；底部难度按钮可直接点按（走与手柄一致的重开确认保护）；按下已翻开数字格预览和弦范围；超大棋盘（如 50×50）启用视口滚动，触摸拖动（越阈值后重锚，不再跳变）或手柄光标移动自动跟随浏览
+- **超大棋盘可读性**：格子边长下限 20px、数字占格子 60%、斜面宽度随格子缩放，50×50 不再压到 8px 字号
 - **其余对齐桌面版**：三档难度 + 自定义雷区、6 套主题、6 种运行时合成音效、统计、暂停恢复、首次点击安全、和弦失败 shake
 
 ### 构建与安装

@@ -194,4 +194,166 @@ class GameEngineTest {
         g.reveal(8, 8)
         assertEquals(revealedBefore, g.revealedCount)
     }
+
+    // ---------- 输入校验与边界守卫（防止非法配置把异常延迟到首点） ----------
+
+    @Test
+    fun `initCustom 拒绝非法配置`() {
+        val g = GameEngine()
+        assertThrows(IllegalArgumentException::class.java) { g.initCustom(0, 9, 1) }
+        assertThrows(IllegalArgumentException::class.java) { g.initCustom(9, 0, 1) }
+        assertThrows(IllegalArgumentException::class.java) { g.initCustom(-1, 9, 0) }
+        assertThrows(IllegalArgumentException::class.java) { g.initCustom(9, 9, -5) }
+        // 上限 = rows*cols - 首点 3×3 安全区
+        assertThrows(IllegalArgumentException::class.java) { g.initCustom(9, 9, 73) }
+        g.initCustom(9, 9, 72)
+        assertEquals(72, g.totalMines)
+    }
+
+    @Test
+    fun `initCustom 允许退化但合法的棋盘`() {
+        val g = GameEngine()
+        g.initCustom(1, 1, 0)
+        assertEquals(1, g.rows)
+        assertEquals(0, g.totalMines)
+        g.initCustom(2, 2, 0)
+        assertEquals(4, g.rows * g.cols)
+    }
+
+    @Test
+    fun `越界坐标的操作安全返回且无副作用`() {
+        val g = setupEngine("beginner", listOf(0 to 0))
+        val revealedBefore = g.revealedCount
+        val flagsBefore = g.flagCount
+        val stateBefore = g.state
+        for ((r, c) in listOf(-1 to 0, 0 to -1, 9 to 0, 0 to 9, 99 to 99, -99 to -99)) {
+            g.reveal(r, c)
+            g.toggleFlag(r, c)
+            g.chord(r, c)
+        }
+        assertEquals(revealedBefore, g.revealedCount)
+        assertEquals(flagsBefore, g.flagCount)
+        assertEquals(stateBefore, g.state)
+    }
+
+    @Test
+    fun `插旗三态循环：旗→问号→取消，旗数同步增减`() {
+        val g = setupEngine("beginner", listOf(0 to 0))
+        assertEquals(0, g.flagCount)
+        g.toggleFlag(5, 5)
+        assertTrue(g.board[5][5].flagged)
+        assertEquals(1, g.flagCount)
+        g.toggleFlag(5, 5)
+        assertFalse(g.board[5][5].flagged)
+        assertTrue(g.board[5][5].questioned)
+        assertEquals(0, g.flagCount)
+        g.toggleFlag(5, 5)
+        assertFalse(g.board[5][5].questioned)
+        assertEquals(0, g.flagCount)
+    }
+
+    @Test
+    fun `问号格被翻开时清除问号标记`() {
+        val g = setupEngine("beginner", listOf(0 to 0))
+        g.toggleFlag(5, 5)
+        g.toggleFlag(5, 5) // 转为问号
+        assertTrue(g.board[5][5].questioned)
+        g.reveal(5, 5)
+        assertTrue(g.board[5][5].revealed)
+        assertFalse(g.board[5][5].questioned)
+    }
+
+    @Test
+    fun `终局后和弦不再生效`() {
+        val g = setupEngine("beginner", listOf(1 to 1, 8 to 8))
+        g.reveal(0, 0)
+        g.toggleFlag(1, 1) // 只插对 1 个旗，共 2 雷 → 不判胜
+        g.reveal(8, 8) // 踩雷判负
+        assertEquals("lost", g.state)
+        val revealedBefore = g.revealedCount
+        assertFalse(g.chord(0, 0))
+        assertEquals(revealedBefore, g.revealedCount)
+    }
+
+    @Test
+    fun `胜利终局后同样拒绝操作`() {
+        // 雷相邻 (0,0)：胜局下它的相邻旗数仍与数字相等，去掉守卫会误判为「可和弦」
+        val g = setupEngine("beginner", listOf(1 to 1, 1 to 2))
+        g.reveal(0, 0)
+        assertEquals(1, g.board[0][0].adjacentMines)
+        g.toggleFlag(1, 1)
+        g.toggleFlag(1, 2)
+        assertEquals("won", g.state)
+        val revealedBefore = g.revealedCount
+        assertFalse(g.chord(0, 0))
+        g.reveal(5, 5)
+        g.toggleFlag(6, 6)
+        assertEquals(revealedBefore, g.revealedCount)
+        assertEquals(2, g.flagCount)
+    }
+
+    // ---------- 后台生成（planMines / applyPlan 拆分，对应桌面 generator.js） ----------
+
+    @Test
+    fun `planMines 普通模式：雷数与首点安全区正确`() {
+        val plan = GameEngine.planMines(16, 30, 99, 8, 15, false)
+        assertEquals(16 * 30, plan.mines.size)
+        assertEquals(99, plan.mines.count { it })
+        for (dr in -1..1) {
+            for (dc in -1..1) {
+                assertFalse("首点 3×3 不应有雷", plan.mines[(8 + dr) * 30 + (15 + dc)])
+            }
+        }
+        assertFalse(plan.noGuessFallback)
+    }
+
+    @Test
+    fun `planMines 不修改引擎实例状态（可安全在后台线程调用）`() {
+        val g = GameEngine("beginner")
+        GameEngine.planMines(16, 30, 99, 8, 15, true)
+        assertFalse("生成不应触碰实例棋盘", g.minesPlaced)
+        assertEquals(9, g.rows)
+        assertEquals(10, g.totalMines)
+    }
+
+    @Test
+    fun `planMines 无猜：高级局能在预算内生成可解雷局`() {
+        val plan = GameEngine.planMines(16, 30, 99, 8, 15, true)
+        assertEquals(99, plan.mines.count { it })
+        assertFalse("高级局应能在预算内找到可解局", plan.noGuessFallback)
+    }
+
+    @Test
+    fun `applyPlanAndReveal：应用后台雷位后正常翻开且首点无雷`() {
+        val g = GameEngine("expert")
+        val plan = GameEngine.planMines(g.rows, g.cols, g.totalMines, 8, 15, true)
+        assertTrue(g.applyPlanAndReveal(8, 15, plan))
+        assertEquals("playing", g.state)
+        assertTrue(g.revealedCount > 0)
+        for (dr in -1..1) {
+            for (dc in -1..1) {
+                assertFalse("首点 3×3 不应有雷", g.board[8 + dr][15 + dc].mine)
+            }
+        }
+        assertEquals(99, g.board.sumOf { row -> row.count { it.mine } })
+    }
+
+    @Test
+    fun `applyPlan 幂等：同局重复应用被忽略`() {
+        val g = GameEngine("beginner")
+        val plan = GameEngine.planMines(g.rows, g.cols, g.totalMines, 4, 4, false)
+        g.applyPlan(plan)
+        assertTrue(g.minesPlaced)
+        val firstMine = g.board[0][0].mine
+        // 换一份全雷规划再应用：应被忽略，不污染既有雷局
+        g.applyPlan(GameEngine.MinePlan(BooleanArray(g.rows * g.cols) { true }, true))
+        assertEquals(firstMine, g.board[0][0].mine)
+        assertFalse(g.noGuessFallback)
+    }
+
+    @Test
+    fun `planMines 参数非法时报错`() {
+        assertThrows(IllegalArgumentException::class.java) { GameEngine.planMines(0, 9, 1, 0, 0, false) }
+        assertThrows(IllegalArgumentException::class.java) { GameEngine.planMines(9, 9, -1, 4, 4, false) }
+    }
 }

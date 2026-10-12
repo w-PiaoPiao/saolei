@@ -12,6 +12,8 @@ object Synth {
 
     /** 单音：波形 × 指数衰减包络（对齐 Web Audio exponentialRampToValueAtTime(0.001)） */
     fun tone(freq: Double, duration: Double, wave: Wave, volume: Double): ShortArray {
+        // volume<=0 会让 log(0.001/volume) 变成 ±Infinity 并产出 NaN 样本；时长为 0 无意义
+        require(freq > 0 && duration > 0 && volume > 0) { "合成参数必须为正数" }
         val n = (SAMPLE_RATE * duration).toInt()
         val out = ShortArray(n)
         val twoPi = 2.0 * Math.PI
@@ -32,6 +34,7 @@ object Synth {
 
     /** 白噪声：随机 × 线性衰减（对齐 audio.js playNoise） */
     fun noise(duration: Double, volume: Double): ShortArray {
+        require(duration > 0 && volume > 0) { "合成参数必须为正数" }
         val n = (SAMPLE_RATE * duration).toInt()
         val out = ShortArray(n)
         val rnd = java.util.Random()
@@ -46,6 +49,7 @@ object Synth {
 
     /** 混音：按起始秒偏移叠加多条音轨（超出则截断并饱和钳制） */
     fun mix(vararg parts: Pair<Double, ShortArray>): ShortArray {
+        require(parts.all { (offset, _) -> offset >= 0 }) { "音轨偏移不能为负" }
         val total = parts.maxOfOrNull { (offset, data) ->
             (offset * SAMPLE_RATE).toInt() + data.size
         } ?: 0

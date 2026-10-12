@@ -35,6 +35,9 @@ object Movement {
             }
         }
         if (dr == 0 && dc == 0) return null
-        return (row + dr).coerceIn(0, rows - 1) to (col + dc).coerceIn(0, cols - 1)
+        // 与桌面版 movement.js 一致用 minOf/maxOf 组合：rows/cols 为 0 时返回 0 而不是
+        // coerceIn(0, -1) 的空区间异常（退化棋盘不应让按键路径崩溃）
+        return minOf(rows - 1, row + dr).coerceAtLeast(0) to
+            minOf(cols - 1, col + dc).coerceAtLeast(0)
     }
 }

@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   getAppVersion: () => ipcRenderer.invoke('app-version'),
+  /** 无猜雷位生成（后台线程）：{rows, cols, mines, safeRow, safeCol} → {ok, mines, noGuessFallback} */
+  generateMines: (req) => ipcRenderer.invoke('generate-mines', req),
   fitWindow: (width, height) => ipcRenderer.send('fit-window', width, height),
   onMenuAction: (callback) => {
     ipcRenderer.on('menu-action', (_, data) => callback(data))

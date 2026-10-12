@@ -26,6 +26,12 @@
       "icon.png",
       "src/**/*"
     ],
+    "asarUnpack": [
+      "src/generator-worker.js",
+      "src/generator.js",
+      "src/solver.js",
+      "src/config.js"
+    ],
     "mac": {
       "target": "dmg"
     },

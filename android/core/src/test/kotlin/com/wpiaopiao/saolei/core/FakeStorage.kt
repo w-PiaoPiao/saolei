@@ -7,4 +7,8 @@ class FakeStorage : Storage {
     override fun putString(key: String, value: String) {
         map[key] = value
     }
+
+    override fun remove(key: String) {
+        map.remove(key)
+    }
 }

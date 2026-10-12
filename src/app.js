@@ -81,6 +81,8 @@
   // ---------- 新游戏 ----------
 
   function startGame(level) {
+    // 作废进行中的无猜后台生成，避免过期雷局落到新局上
+    ui.cancelGeneration()
     if (level === 'custom') {
       // 防御：尚无自定义配置时（理论上不可达）直接忽略，避免 game.init('custom') 抛错
       if (!game.currentCustom) return
@@ -154,7 +156,8 @@
     showConfirmDialog('重新开始？', '当前对局将丢失', action)
   }
 
-  function showCustomDialog() {    const { dialog, close } = showDialog(`
+  function showCustomDialog() {
+    const { dialog, close } = showDialog(`
       <h2>自定义雷区</h2>
       <div class="error" id="custom-error"></div>
       <div class="row">
@@ -200,6 +203,7 @@
       }
 
       close()
+      ui.cancelGeneration()
       game.initCustom(rows, cols, mines)
       resetTimerClock()
       ui.render()

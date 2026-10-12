@@ -91,4 +91,15 @@ class KeyBindingsTest {
         val kb = KeyBindings(FakeStorage())
         assertFalse(kb.setKey("noSuchAction", KeyCodes.BUTTON_X))
     }
+
+    @Test
+    fun `负键码被拒绝且不落盘（与 load 的过滤一致）`() {
+        val storage = FakeStorage()
+        val kb = KeyBindings(storage)
+        assertFalse(kb.setKey("activate", -1))
+        assertEquals(KeyCodes.BUTTON_B, kb.getKeyCode("activate"))
+        // 重建后仍保持默认，说明没有被持久化
+        val kb2 = KeyBindings(storage)
+        assertEquals(KeyCodes.BUTTON_B, kb2.getKeyCode("activate"))
+    }
 }

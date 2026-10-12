@@ -5,3 +5,6 @@ dist/
 
 # Gradle user home (local build cache, truststore)
 .gradle-user-home/
+
+# CodeGraph 本地索引（工具生成，可随时 rebuild）
+.codegraph/

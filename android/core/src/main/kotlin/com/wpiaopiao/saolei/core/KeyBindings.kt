@@ -68,6 +68,8 @@ class KeyBindings(private val storage: Storage) {
 
     fun setKey(action: String, newCode: Int): Boolean {
         if (!bindings.containsKey(action)) return false
+        // 与 load() 的 code >= 0 过滤保持一致：负键码永远无法触发，也不应落盘
+        if (newCode < 0) return false
         bindings[action] = bindings[action]!!.copy(keyCode = newCode)
         save()
         return true

@@ -20,6 +20,8 @@
         <button class="diff-btn" data-level="expert">高级</button>
       </div>
     </div>
+    <div id="noguess-warning" hidden>⚠ 无解保护不可用，本局可能需要猜</div>
+    <div id="generating-hint" hidden>正在生成无猜雷局…</div>
     <div id="board" role="grid" aria-label="扫雷棋盘"></div>
     <div id="pause-overlay">
       <div id="pause-text">⏸ 已暂停</div>
@@ -28,6 +30,7 @@
 
   <script src="config.js"></script>
   <script src="solver.js"></script>
+  <script src="generator.js"></script>
   <script src="game.js"></script>
   <script src="audio.js"></script>
   <script src="stats.js"></script>

@@ -170,3 +170,93 @@ test('新局重建棋盘清除错误旗标记', () => {
   assert.equal(g.board[5][5].wrongFlag, false)
   assert.equal(g.board[0][0].flagged, false)
 })
+
+// ---------- 输入校验与边界守卫（防止非法配置把异常延迟到首点） ----------
+
+test('initCustom 拒绝非法配置', () => {
+  const g = new GameEngine()
+  assert.throws(() => g.initCustom(0, 9, 1), /正整数/)
+  assert.throws(() => g.initCustom(9, 0, 1), /正整数/)
+  assert.throws(() => g.initCustom(-1, 9, 0), /正整数/)
+  assert.throws(() => g.initCustom(9, 9, -5), /不能为负/)
+  assert.throws(() => g.initCustom(9.5, 9, 1), /整数/)
+  assert.throws(() => g.initCustom(9, 9, NaN), /整数/)
+  // 上限 = rows*cols - 首点 3×3 安全区
+  assert.throws(() => g.initCustom(9, 9, 73), /超过可用格子数量/)
+  assert.doesNotThrow(() => g.initCustom(9, 9, 72))
+})
+
+test('initCustom 允许退化但合法的棋盘', () => {
+  const g = new GameEngine()
+  assert.doesNotThrow(() => g.initCustom(1, 1, 0))
+  assert.equal(g.rows, 1)
+  assert.equal(g.totalMines, 0)
+  assert.doesNotThrow(() => g.initCustom(2, 2, 0))
+})
+
+test('越界坐标的操作安全返回且无副作用', () => {
+  const g = setupEngine('beginner', [[0, 0]])
+  const revealedBefore = g.revealedCount
+  const flagsBefore = g.flagCount
+  const stateBefore = g.state
+  for (const [r, c] of [[-1, 0], [0, -1], [9, 0], [0, 9], [99, 99], [-99, -99]]) {
+    assert.doesNotThrow(() => g.reveal(r, c))
+    assert.doesNotThrow(() => g.toggleFlag(r, c))
+    assert.doesNotThrow(() => g.chord(r, c))
+  }
+  assert.equal(g.revealedCount, revealedBefore)
+  assert.equal(g.flagCount, flagsBefore)
+  assert.equal(g.state, stateBefore)
+})
+
+test('插旗三态循环：旗→问号→取消，旗数同步增减', () => {
+  const g = setupEngine('beginner', [[0, 0]])
+  assert.equal(g.flagCount, 0)
+  g.toggleFlag(5, 5)
+  assert.equal(g.board[5][5].flagged, true)
+  assert.equal(g.flagCount, 1)
+  g.toggleFlag(5, 5)
+  assert.equal(g.board[5][5].flagged, false)
+  assert.equal(g.board[5][5].questioned, true)
+  assert.equal(g.flagCount, 0)
+  g.toggleFlag(5, 5)
+  assert.equal(g.board[5][5].questioned, false)
+  assert.equal(g.flagCount, 0)
+})
+
+test('问号格被翻开时清除问号标记', () => {
+  const g = setupEngine('beginner', [[0, 0]])
+  g.toggleFlag(5, 5)
+  g.toggleFlag(5, 5) // 转为问号
+  assert.equal(g.board[5][5].questioned, true)
+  g.reveal(5, 5)
+  assert.equal(g.board[5][5].revealed, true)
+  assert.equal(g.board[5][5].questioned, false)
+})
+
+test('终局后和弦不再生效', () => {
+  const g = setupEngine('beginner', [[1, 1], [8, 8]])
+  g.reveal(0, 0)
+  g.toggleFlag(1, 1) // 只插对 1 个旗，共 2 雷 → 不判胜
+  g.reveal(8, 8) // 踩雷判负
+  assert.equal(g.state, 'lost')
+  const revealedBefore = g.revealedCount
+  assert.equal(g.chord(0, 0), false)
+  assert.equal(g.revealedCount, revealedBefore)
+})
+
+test('胜利终局后同样拒绝操作', () => {
+  // 雷相邻 (0,0)：胜局下它的相邻旗数仍与数字相等，去掉守卫会误判为「可和弦」
+  const g = setupEngine('beginner', [[1, 1], [1, 2]])
+  g.reveal(0, 0)
+  assert.equal(g.board[0][0].adjacentMines, 1)
+  g.toggleFlag(1, 1)
+  g.toggleFlag(1, 2)
+  assert.equal(g.state, 'won')
+  const revealedBefore = g.revealedCount
+  assert.equal(g.chord(0, 0), false)
+  g.reveal(5, 5)
+  g.toggleFlag(6, 6)
+  assert.equal(g.revealedCount, revealedBefore)
+  assert.equal(g.flagCount, 2)
+})

@@ -196,11 +196,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(var(--cell-size) * 0.5);
+  /* 字号随格子缩放（约 60%），超大棋盘也保持可读 */
+  font-size: calc(var(--cell-size) * 0.6);
   font-weight: bold;
   cursor: pointer;
   background: var(--bg-cell);
-  border: 2px solid;
+  border-style: solid;
+  /* 斜面宽度随格子缩放：小格子用细边避免吃掉太多视觉面积 */
+  border-width: clamp(1px, calc(var(--cell-size) * 0.08), 3px);
   border-color: var(--border-light) var(--border-dark) var(--border-dark) var(--border-light);
 }
 
@@ -227,7 +230,7 @@ body {
 
 .cell.mine {
   background: var(--bg-revealed);
-  font-size: calc(var(--cell-size) * 0.57);
+  font-size: calc(var(--cell-size) * 0.66);
 }
 
 .cell.exploded {
@@ -235,7 +238,7 @@ body {
 }
 
 .cell.flagged, .cell.questioned {
-  font-size: calc(var(--cell-size) * 0.5);
+  font-size: calc(var(--cell-size) * 0.6);
 }
 
 /* 失败终局：插错的旗打红叉（与安卓版绘制一致） */
@@ -299,8 +302,45 @@ body {
   100% { opacity: 0; transform: translate(-50%, -50%); }
 }
 
+/* 无猜降级提示：仅在引擎报告"预算内未找到可解雷局"时显示 */
+#noguess-warning {
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 10px;
+  color: #8A4B00;
+  background: rgba(255, 176, 32, 0.18);
+  border: 1px solid #E0A030;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] #noguess-warning,
+[data-theme="macos-dark"] #noguess-warning {
+  color: #FFC46B;
+  background: rgba(255, 176, 32, 0.12);
+  border-color: #8A6420;
+}
+
+/* 无猜生成中的提示：生成在后台线程进行，界面保持可交互 */
+#generating-hint {
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 10px;
+  color: #1F4E79;
+  background: rgba(90, 155, 213, 0.16);
+  border: 1px solid #5A9BD5;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] #generating-hint,
+[data-theme="macos-dark"] #generating-hint {
+  color: #9CC7EC;
+  background: rgba(90, 155, 213, 0.12);
+  border-color: #3D6B93;
+}
+
 #pause-overlay {
-  position: absolute;
+  /* fixed：大棋盘（#app overflow:auto）滚动后遮罩仍完整覆盖视口 */
+  position: fixed;
   inset: 0;
   /* 不透明遮盖：暂停期间棋盘数字不可辨认，防止借暂停研究局面 */
   background: var(--bg-page);

@@ -10,6 +10,12 @@ class GameEngine(level: String = "beginner") {
     data class Level(val label: String, val rows: Int, val cols: Int, val mines: Int)
     data class CustomConfig(val rows: Int, val cols: Int, val mines: Int)
 
+    /**
+     * 雷位规划结果：由 [planMines] 在后台线程算出，再由 [applyPlan] 在 UI 线程应用。
+     * mines 为按行主序的雷位标记（长度 rows*cols）。
+     */
+    class MinePlan(val mines: BooleanArray, val noGuessFallback: Boolean)
+
     companion object {
         val LEVELS: Map<String, Level> = mapOf(
             "beginner" to Level("初级", 9, 9, 10),
@@ -17,9 +23,102 @@ class GameEngine(level: String = "beginner") {
             "expert" to Level("高级", 16, 30, 99)
         )
 
-        // 无猜模式：重试上限与时间预算（与桌面版 src/config.js 的 NO_GUESS 对齐）
+        // 无猜模式：重试上限与时间预算（与桌面版 src/config.js 的 NO_GUESS 对齐）。
+        // 生成在后台线程执行、界面不冻结，故预算放宽以换取更高成功率。
         const val NO_GUESS_MAX_ATTEMPTS = 600
-        const val NO_GUESS_BUDGET_MS = 500L
+        const val NO_GUESS_BUDGET_MS = 800L
+
+        /** 预算内预估总尝试次数低于此值时提前降级（与桌面 generator.js 的 MIN_EXPECTED_ATTEMPTS 对齐） */
+        const val MIN_EXPECTED_ATTEMPTS = 20
+
+        /** 安全区（首点 3×3）之外随机撒雷（Fisher-Yates），结果写入 [mines] */
+        private fun randomize(
+            mines: BooleanArray,
+            rows: Int, cols: Int, totalMines: Int,
+            safeRow: Int, safeCol: Int
+        ) {
+            mines.fill(false)
+            val candidates = ArrayList<Int>(rows * cols)
+            for (r in 0 until rows) {
+                for (c in 0 until cols) {
+                    if (Math.abs(r - safeRow) > 1 || Math.abs(c - safeCol) > 1) {
+                        candidates.add(r * cols + c)
+                    }
+                }
+            }
+            if (candidates.size < totalMines) {
+                throw IllegalStateException("雷数超过可用格子数量")
+            }
+            for (i in candidates.size - 1 downTo 1) {
+                val j = kotlin.random.Random.nextInt(i + 1)
+                val t = candidates[i]
+                candidates[i] = candidates[j]
+                candidates[j] = t
+            }
+            for (k in 0 until totalMines) mines[candidates[k]] = true
+        }
+
+        /** 把雷位写入求解器用的临时棋盘并算好相邻雷数（只依赖 mine/adjacentMines） */
+        private fun fillGrid(grid: Array<Array<Cell>>, mines: BooleanArray, rows: Int, cols: Int) {
+            for (r in 0 until rows) {
+                for (c in 0 until cols) {
+                    val cell = grid[r][c]
+                    cell.mine = mines[r * cols + c]
+                    cell.adjacentMines = 0
+                }
+            }
+            for (r in 0 until rows) {
+                for (c in 0 until cols) {
+                    if (grid[r][c].mine) continue
+                    var count = 0
+                    for (dr in -1..1) {
+                        for (dc in -1..1) {
+                            if (dr == 0 && dc == 0) continue
+                            val nr = r + dr
+                            val nc = c + dc
+                            if (nr in 0 until rows && nc in 0 until cols && grid[nr][nc].mine) count++
+                        }
+                    }
+                    grid[r][c].adjacentMines = count
+                }
+            }
+        }
+
+        /**
+         * 纯计算：规划一局雷位，不修改任何 [GameEngine] 实例状态，因此可在后台线程调用，
+         * 结果经 [applyPlan] 交回 UI 线程。与桌面版 src/generator.js 逐语义对齐。
+         *
+         * 无猜模式下反复重生成直到求解器判定可纯逻辑通关；受尝试上限与时间预算双重约束，
+         * 并在「按当前单次耗时预估、预算内总量不足以期待命中」时提前降级，避免大棋盘白等。
+         */
+        fun planMines(
+            rows: Int, cols: Int, totalMines: Int,
+            safeRow: Int, safeCol: Int, noGuess: Boolean
+        ): MinePlan {
+            require(rows >= 1 && cols >= 1) { "行列数必须为正整数" }
+            require(totalMines >= 0) { "雷数不能为负" }
+            val mines = BooleanArray(rows * cols)
+            if (!noGuess) {
+                randomize(mines, rows, cols, totalMines, safeRow, safeCol)
+                return MinePlan(mines, false)
+            }
+            // 每次调用自建临时棋盘（不复用静态字段，保证可安全地在后台线程调用）
+            val grid = Array(rows) { Array(cols) { Cell() } }
+            val start = System.nanoTime()
+            for (attempt in 0 until NO_GUESS_MAX_ATTEMPTS) {
+                randomize(mines, rows, cols, totalMines, safeRow, safeCol)
+                fillGrid(grid, mines, rows, cols)
+                if (Solver.solve(grid, rows, cols, totalMines, safeRow, safeCol)) {
+                    return MinePlan(mines, false)
+                }
+                val elapsedMs = (System.nanoTime() - start) / 1_000_000L
+                if (elapsedMs <= 0) continue // 时钟精度不足：只受尝试上限约束
+                val avgCostMs = elapsedMs.toDouble() / (attempt + 1)
+                if (NO_GUESS_BUDGET_MS / avgCostMs < MIN_EXPECTED_ATTEMPTS) break
+                if (elapsedMs >= NO_GUESS_BUDGET_MS) break
+            }
+            return MinePlan(mines, true)
+        }
     }
 
     var currentLevel: String = "beginner"
@@ -107,6 +206,13 @@ class GameEngine(level: String = "beginner") {
     }
 
     fun initCustom(rows: Int, cols: Int, mines: Int) {
+        // 非法配置在构造时就拒绝，避免把异常延迟到「第一次点击」才抛
+        require(rows >= 1 && cols >= 1) { "行列数必须为正整数" }
+        require(mines >= 0) { "雷数不能为负" }
+        // 首点 3×3 安全区不布雷，故最坏（首点居中）时可用格为 rows*cols-9。
+        // 用 Long 计算，避免超大行列数下的 Int 溢出让校验形同虚设
+        val maxMines = (rows.toLong() * cols - 9).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+        require(mines <= maxMines) { "雷数超过可用格子数量（最多 $maxMines）" }
         currentLevel = "custom"
         currentCustom = CustomConfig(rows, cols, mines)
         this.rows = rows
@@ -134,78 +240,37 @@ class GameEngine(level: String = "beginner") {
     // ---------- 布雷 ----------
 
     /**
-     * 在安全格首次翻开后布雷：
-     * - 安全格周围 3×3 永不布雷（保证首次点击绝对安全）
-     * - 普通模式 Fisher-Yates 洗牌，O(n) 且无拒绝采样退化
-     * - 无猜模式反复重生成，直到求解器判定可纯逻辑通关
+     * 在安全格首次翻开后布雷（同步路径：普通模式与单元测试走这里）。
+     * 无猜模式生成耗时较长，UI 应优先走「后台 planMines + applyPlanAndReveal」异步路径。
      */
     fun placeMines(safeRow: Int, safeCol: Int) {
-        if (noGuess) {
-            placeMinesNoGuess(safeRow, safeCol)
-        } else {
-            randomizeMines(safeRow, safeCol)
-            noGuessFallback = false
-        }
+        applyPlan(planMines(rows, cols, totalMines, safeRow, safeCol, noGuess))
+    }
+
+    /** 应用（可能来自后台线程的）雷位规划。同局重复调用无效。 */
+    fun applyPlan(plan: MinePlan) {
+        if (minesPlaced) return
+        noGuessFallback = plan.noGuessFallback
+        applyMines(plan.mines)
         minesPlaced = true
         bbbv = compute3BV()
         markAllDirty()
     }
 
-    /** 随机布雷（先清空上一轮结果，供无猜重试复用同一张棋盘） */
-    private fun randomizeMines(safeRow: Int, safeCol: Int) {
+    /** 写入雷位并重算相邻雷数 */
+    private fun applyMines(mines: BooleanArray) {
         for (r in 0 until rows) {
             for (c in 0 until cols) {
-                board[r][c].mine = false
-                board[r][c].adjacentMines = 0
+                val cell = board[r][c]
+                cell.mine = mines[r * cols + c]
+                cell.adjacentMines = 0
             }
-        }
-        val candidates = mutableListOf<Int>()
-        for (r in 0 until rows) {
-            for (c in 0 until cols) {
-                if (Math.abs(r - safeRow) > 1 || Math.abs(c - safeCol) > 1) {
-                    candidates.add(r * cols + c)
-                }
-            }
-        }
-        if (candidates.size < totalMines) {
-            throw IllegalStateException("雷数超过可用格子数量")
-        }
-        for (i in candidates.size - 1 downTo 1) {
-            val j = kotlin.random.Random.nextInt(i + 1)
-            val t = candidates[i]
-            candidates[i] = candidates[j]
-            candidates[j] = t
-        }
-        for (k in 0 until totalMines) {
-            val idx = candidates[k]
-            board[idx / cols][idx % cols].mine = true
         }
         for (r in 0 until rows) {
             for (c in 0 until cols) {
-                if (!board[r][c].mine) {
-                    board[r][c].adjacentMines = countAdjacentMines(r, c)
-                }
+                if (!board[r][c].mine) board[r][c].adjacentMines = countAdjacentMines(r, c)
             }
         }
-    }
-
-    /**
-     * 无猜布雷：重生成直到求解器判定可解。
-     * 受尝试次数与时间预算双重限制，预算内未找到时沿用最后一次生成的雷局，
-     * 并置 [noGuessFallback] 供 UI 提示。
-     */
-    private fun placeMinesNoGuess(safeRow: Int, safeCol: Int): Boolean {
-        val deadline = System.nanoTime() + NO_GUESS_BUDGET_MS * 1_000_000L
-        for (attempt in 0 until NO_GUESS_MAX_ATTEMPTS) {
-            randomizeMines(safeRow, safeCol)
-            if (Solver.solve(board, rows, cols, totalMines, safeRow, safeCol)) {
-                noGuessFallback = false
-                return true
-            }
-            if (System.nanoTime() >= deadline) break
-        }
-        noGuessFallback = true
-        return false
     }
 
     /**
@@ -272,12 +337,36 @@ class GameEngine(level: String = "beginner") {
 
     fun reveal(row: Int, col: Int) {
         if (state == "won" || state == "lost") return
+        if (row !in 0 until rows || col !in 0 until cols) return
         val cell = board[row][col]
         if (cell.revealed || cell.flagged) return
         if (!minesPlaced) {
             placeMines(row, col)
             setState("playing")
         }
+        finishReveal(row, col)
+    }
+
+    /**
+     * 异步路径入口：雷位已由后台线程生成，这里只做「应用 + 翻开」。
+     * 生成期间局面可能变化，故对所有前置条件做竞态检查，任一不满足即放弃。
+     * @return 是否成功应用并翻开
+     */
+    fun applyPlanAndReveal(row: Int, col: Int, plan: MinePlan): Boolean {
+        if (minesPlaced) return false
+        if (state == "won" || state == "lost") return false
+        if (row !in 0 until rows || col !in 0 until cols) return false
+        val cell = board[row][col]
+        if (cell.revealed || cell.flagged) return false
+        applyPlan(plan)
+        setState("playing")
+        finishReveal(row, col)
+        return true
+    }
+
+    /** 翻开本格并处理踩雷/胜负（调用方已完成全部前置守卫） */
+    private fun finishReveal(row: Int, col: Int) {
+        val cell = board[row][col]
         if (cell.mine) {
             cell.revealed = true
             cell.exploded = true
@@ -298,7 +387,7 @@ class GameEngine(level: String = "beginner") {
             val cell = board[r][c]
             if (cell.revealed || cell.flagged || cell.mine) continue
             cell.revealed = true
-            cell.flagged = false
+            // 问号格不在上面的跳过条件里，会被洪泛翻开并清除问号标记
             cell.questioned = false
             revealedCount++
             markDirty(r, c)
@@ -319,6 +408,7 @@ class GameEngine(level: String = "beginner") {
 
     fun toggleFlag(row: Int, col: Int) {
         if (state == "won" || state == "lost") return
+        if (row !in 0 until rows || col !in 0 until cols) return
         val cell = board[row][col]
         if (cell.revealed) return
         if (state == "ready") setState("playing")
@@ -340,6 +430,9 @@ class GameEngine(level: String = "beginner") {
 
     /** 和弦：已翻开数字格周围旗数匹配时展开周围未翻开格。返回是否执行了展开。 */
     fun chord(row: Int, col: Int): Boolean {
+        // 终局守卫：终局后和弦不应产生任何效果（与桌面版一致）
+        if (state == "won" || state == "lost") return false
+        if (row !in 0 until rows || col !in 0 until cols) return false
         val cell = board[row][col]
         if (!cell.revealed || cell.adjacentMines == 0) return false
         var adjFlags = 0

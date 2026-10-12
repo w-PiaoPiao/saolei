@@ -57,4 +57,11 @@ class MovementTest {
     fun `未知动作被忽略`() {
         assertEquals(4 to 5, Movement.combineDirections(held("moveUp", "activate"), 9, 9, 5, 5))
     }
+
+    @Test
+    fun `零尺寸棋盘不抛异常（退化棋盘守卫）`() {
+        // 旧实现 coerceIn(0, -1) 会抛空区间异常；现与桌面版 movement.js 一致返回裁剪值
+        assertEquals(0 to 0, Movement.combineDirections(held("moveUp"), 0, 0, 0, 0))
+        assertEquals(0 to 0, Movement.combineDirections(held("moveLeft", "moveUp"), 0, 0, 0, 0))
+    }
 }

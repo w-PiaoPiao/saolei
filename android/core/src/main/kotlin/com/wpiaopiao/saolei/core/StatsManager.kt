@@ -65,14 +65,16 @@ class StatsManager(private val storage: Storage) {
     }
 
     private fun writeBestTime(level: String, value: Int?) {
-        storage.putString(key("bestTime.$level"), value?.toString() ?: "")
+        if (value == null) storage.remove(key("bestTime.$level"))
+        else storage.putString(key("bestTime.$level"), value.toString())
     }
 
     private fun readBestRate(level: String): Double? =
         storage.getString(key("bestBbbvPerSec.$level"))?.toDoubleOrNull()
 
     private fun writeBestRate(level: String, value: Double?) {
-        storage.putString(key("bestBbbvPerSec.$level"), value?.toString() ?: "")
+        if (value == null) storage.remove(key("bestBbbvPerSec.$level"))
+        else storage.putString(key("bestBbbvPerSec.$level"), value.toString())
     }
 
     /** 历史记录编码：`level|time|bbbv|ts` 以 `;` 分隔（core 不引入 JSON 库） */
@@ -103,7 +105,9 @@ class StatsManager(private val storage: Storage) {
         currentStreak = readInt("currentStreak")
         bestStreak = readInt("bestStreak")
         totalPlayTime = readInt("totalPlayTime")
-        lastLevel = storage.getString(key("lastLevel"))
+        // 空串不是合法难度名（旧版 reset 曾写入空串当哨兵）：归一为 null，
+        // 否则会被当成"有值但不存在"的难度而误报新纪录
+        lastLevel = storage.getString(key("lastLevel"))?.takeIf { it.isNotBlank() }
         bestTime.clear()
         for (level in TIME_LEVELS) bestTime[level] = readBestTime(level)
         bestBbbvPerSec.clear()
@@ -185,7 +189,7 @@ class StatsManager(private val storage: Storage) {
 
     /** 某难度最近的胜利记录（时间升序，供效率曲线绘制） */
     fun getHistory(level: String, limit: Int = 20): List<HistoryEntry> =
-        history.filter { it.level == level }.takeLast(limit)
+        history.filter { it.level == level }.takeLast(limit.coerceAtLeast(0))
 
     fun reset() {
         totalGames = 0
@@ -202,10 +206,11 @@ class StatsManager(private val storage: Storage) {
         writeInt("currentStreak", 0)
         writeInt("bestStreak", 0)
         writeInt("totalPlayTime", 0)
-        storage.putString(key("lastLevel"), "")
+        storage.remove(key("lastLevel"))
         for (level in TIME_LEVELS) {
             writeBestTime(level, null)
             writeBestRate(level, null)
+            bestTime[level] = null
             bestBbbvPerSec[level] = null
         }
         saveHistory()

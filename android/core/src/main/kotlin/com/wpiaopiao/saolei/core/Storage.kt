@@ -6,4 +6,7 @@ package com.wpiaopiao.saolei.core
 interface Storage {
     fun getString(key: String): String?
     fun putString(key: String, value: String)
+
+    /** 删除键（真正回到「无值」状态，替代用空串当哨兵的做法） */
+    fun remove(key: String)
 }

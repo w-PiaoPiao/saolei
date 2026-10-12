@@ -22,6 +22,8 @@ class UIRenderer {
     this.mineCounter = document.getElementById('mine-counter')
     this.timerDisplay = document.getElementById('timer')
     this.faceButton = document.getElementById('face-button')
+    this.noGuessWarning = document.getElementById('noguess-warning')
+    this.generatingHint = document.getElementById('generating-hint')
     this.difficultyButtons = document.querySelectorAll('.diff-btn')
     this.chordPending = false
     this.chordTarget = null
@@ -33,6 +35,10 @@ class UIRenderer {
     this.cellElements = []
     this.cursor = { row: 0, col: 0 }
     this.cursorVisible = false
+    this.lastNoGuessWarning = null
+    // 无猜首点的异步生成：generating 期间忽略棋盘操作，generationSeq 用于作废过期结果
+    this.generating = false
+    this.generationSeq = 0
 
     // 事件委托：棋盘容器统一处理，避免每格 3 个监听器
     this.container.addEventListener('mousedown', (e) => {
@@ -242,7 +248,83 @@ class UIRenderer {
 
   // ---------- 操作入口 ----------
 
+  /** 是否该走「后台生成 + 应用」的异步首点路径（仅无猜模式且主进程可用时） */
+  canGenerateAsync() {
+    return !!(
+      this.engine.noGuess &&
+      !this.engine.minesPlaced &&
+      this.engine.state === 'ready' &&
+      window.electronAPI &&
+      typeof window.electronAPI.generateMines === 'function'
+    )
+  }
+
+  /** 作废进行中的生成（新游戏/切难度时调用），避免过期结果落到新局上 */
+  cancelGeneration() {
+    if (!this.generating) return
+    this.generationSeq++
+    this.generating = false
+    this.setGeneratingHint(false)
+  }
+
+  setGeneratingHint(on) {
+    if (!this.generatingHint) return
+    this.generatingHint.hidden = !on
+  }
+
+  /**
+   * 无猜首点：把重生成循环交给主进程的工作线程，渲染进程保持可交互。
+   * 生成失败（如线程异常）时回退到同步路径，保证功能始终可用。
+   */
+  startAsyncReveal(row, col) {
+    this.generating = true
+    this.generationSeq++
+    const seq = this.generationSeq
+    this.setGeneratingHint(true)
+
+    const applyPlan = (plan) => {
+      if (seq !== this.generationSeq) return // 期间已重开/切难度：丢弃结果
+      this.generating = false
+      this.setGeneratingHint(false)
+      if (!this.engine.applyPlanAndReveal(row, col, plan)) return
+      this.onStateChange(this.engine.state)
+      if (this.engine.state === 'won') this.audio.win()
+      else this.audio.click()
+      this.render()
+    }
+
+    const fallbackSync = () => {
+      if (seq !== this.generationSeq) return
+      this.generating = false
+      this.setGeneratingHint(false)
+      this.onLeftClickSync(row, col)
+    }
+
+    window.electronAPI
+      .generateMines({
+        rows: this.engine.rows,
+        cols: this.engine.cols,
+        mines: this.engine.totalMines,
+        safeRow: row,
+        safeCol: col
+      })
+      .then((res) => {
+        if (res && res.ok) applyPlan({ mines: res.mines, noGuessFallback: res.noGuessFallback })
+        else fallbackSync()
+      })
+      .catch(fallbackSync)
+  }
+
   onLeftClick(row, col) {
+    if (this.generating) return
+    if (this.canGenerateAsync()) {
+      this.startAsyncReveal(row, col)
+      return
+    }
+    this.onLeftClickSync(row, col)
+  }
+
+  onLeftClickSync(row, col) {
     const eng = this.engine
     if (eng.state === 'won' || eng.state === 'lost') return
     if (eng.state === 'ready' || eng.state === 'playing') {
@@ -256,6 +338,7 @@ class UIRenderer {
   }
 
   onRightClick(row, col) {
+    if (this.generating) return
     const eng = this.engine
     if (eng.state === 'won' || eng.state === 'lost') return
     if (eng.state === 'ready' || eng.state === 'playing') {
@@ -301,6 +384,7 @@ class UIRenderer {
   }
 
   doChord(row, col) {
+    if (this.generating) return
     const eng = this.engine
     if (eng.state === 'playing') {
       const didChord = eng.chord(row, col)
@@ -387,6 +471,16 @@ class UIRenderer {
     }
     this.timerDisplay.textContent = String(this.engine.timer).padStart(3, '0')
     this.setFace(this.engine.state)
+    this.updateNoGuessWarning()
+  }
+
+  /** 无猜模式未能在预算内找到可解雷局时，明确告知玩家（否则会误以为本局保证无猜） */
+  updateNoGuessWarning() {
+    if (!this.noGuessWarning) return
+    const show = this.engine.noGuessFallback === true
+    if (show === this.lastNoGuessWarning) return
+    this.lastNoGuessWarning = show
+    this.noGuessWarning.hidden = !show
   }
 
   updateDifficultyButtons() {

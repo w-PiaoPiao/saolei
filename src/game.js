@@ -1,14 +1,15 @@
 /**
  * 扫雷游戏引擎：纯逻辑、无 DOM 依赖。
  * 同时支持浏览器（全局 GameEngine）与 Node 测试（module.exports）。
+ * 雷位生成抽到 generator.js：可在其他进程/线程运行后再由 applyPlan 应用（无猜模式异步生成）。
  */
 ;(function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(require('./config.js'), require('./solver.js'))
+    module.exports = factory(require('./config.js'), require('./generator.js'))
   } else {
-    root.GameEngine = factory(root.CONFIG, root.MineSolver)
+    root.GameEngine = factory(root.CONFIG, root.MineGenerator)
   }
-})(typeof self !== 'undefined' ? self : this, function (CONFIG, Solver) {
+})(typeof self !== 'undefined' ? self : this, function (CONFIG, Generator) {
   class GameEngine {
     constructor(level = 'beginner') {
       this.levels = CONFIG.LEVELS
@@ -71,6 +72,15 @@
     }
 
     initCustom(rows, cols, mines) {
+      // 非法配置在构造时就拒绝，避免把异常延迟到「第一次点击」才抛
+      if (!Number.isInteger(rows) || !Number.isInteger(cols) || !Number.isInteger(mines)) {
+        throw new Error('行列数与雷数必须是整数')
+      }
+      if (rows < 1 || cols < 1) throw new Error('行列数必须为正整数')
+      if (mines < 0) throw new Error('雷数不能为负')
+      // 首点 3×3 安全区不布雷，故最坏（首点居中）时可用格为 rows*cols-9
+      const maxMines = Math.max(0, rows * cols - 9)
+      if (mines > maxMines) throw new Error(`雷数超过可用格子数量（最多 ${maxMines}）`)
       this.currentLevel = 'custom'
       this.currentCustom = { rows, cols, mines }
       this.rows = rows
@@ -106,79 +116,46 @@
     // ---------- 布雷 ----------
 
     /**
-     * 在安全格首次翻开后布雷：
-     * - 安全格周围 3×3 永不布雷（保证首次点击绝对安全）
-     * - 普通模式 Fisher-Yates 洗牌，O(n) 且无拒绝采样退化
-     * - 无猜模式反复重生成，直到求解器判定可纯逻辑通关
+     * 在安全格首次翻开后布雷（同步路径：普通模式与单元测试走这里）。
+     * 无猜模式生成耗时较长，UI 应优先走「后台生成 + applyPlanAndReveal」异步路径。
      */
     placeMines(safeRow, safeCol) {
-      if (this.noGuess) {
-        this.placeMinesNoGuess(safeRow, safeCol)
-      } else {
-        this.randomizeMines(safeRow, safeCol)
-        this.noGuessFallback = false
-      }
+      this.applyPlan(
+        Generator.generate(this.rows, this.cols, this.totalMines, safeRow, safeCol, this.noGuess)
+      )
+    }
+
+    /**
+     * 应用（可能来自其他进程/线程的）雷位规划。同局重复调用无效。
+     * @param {{mines: Uint8Array|Array|Object, noGuessFallback: boolean}} plan
+     */
+    applyPlan(plan) {
+      if (this.minesPlaced) return
+      this.noGuessFallback = plan.noGuessFallback === true
+      this.applyMines(plan.mines)
       this.minesPlaced = true
       this.bbbv = this.compute3BV()
       this.markAllDirty()
     }
 
-    /** 随机布雷（先清空上一轮结果，供无猜重试复用同一张棋盘） */
-    randomizeMines(safeRow, safeCol) {
-      for (let r = 0; r < this.rows; r++) {
-        for (let c = 0; c < this.cols; c++) {
-          this.board[r][c].mine = false
-          this.board[r][c].adjacentMines = 0
+    /** 写入雷位并重算相邻雷数；mines 为按行主序的 0/1 序列（跨 IPC 后可能不是 Uint8Array） */
+    applyMines(mines) {
+      const { rows, cols } = this
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const v = mines[r * cols + c]
+          const cell = this.board[r][c]
+          cell.mine = v === 1 || v === true
+          cell.adjacentMines = 0
         }
       }
-      const candidates = []
-      for (let r = 0; r < this.rows; r++) {
-        for (let c = 0; c < this.cols; c++) {
-          if (Math.abs(r - safeRow) > 1 || Math.abs(c - safeCol) > 1) {
-            candidates.push(r * this.cols + c)
-          }
-        }
-      }
-      if (candidates.length < this.totalMines) {
-        throw new Error('雷数超过可用格子数量')
-      }
-      for (let i = candidates.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1))
-        const t = candidates[i]
-        candidates[i] = candidates[j]
-        candidates[j] = t
-      }
-      for (let k = 0; k < this.totalMines; k++) {
-        const idx = candidates[k]
-        this.board[Math.floor(idx / this.cols)][idx % this.cols].mine = true
-      }
-      for (let r = 0; r < this.rows; r++) {
-        for (let c = 0; c < this.cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
           if (!this.board[r][c].mine) {
             this.board[r][c].adjacentMines = this.countAdjacentMines(r, c)
           }
         }
       }
-    }
-
-    /**
-     * 无猜布雷：重生成直到求解器判定可解。
-     * 受 maxAttempts 与时间预算双重限制，预算内未找到时沿用最后一次生成的雷局，
-     * 并置 noGuessFallback = true 供 UI 提示。
-     */
-    placeMinesNoGuess(safeRow, safeCol) {
-      const { maxAttempts, budgetMs } = CONFIG.NO_GUESS
-      const deadline = Date.now() + budgetMs
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        this.randomizeMines(safeRow, safeCol)
-        if (Solver.solve(this.board, this.rows, this.cols, this.totalMines, safeRow, safeCol)) {
-          this.noGuessFallback = false
-          return true
-        }
-        if (Date.now() >= deadline) break
-      }
-      this.noGuessFallback = true
-      return false
     }
 
     /**
@@ -246,12 +223,36 @@
 
     reveal(row, col) {
       if (this.state === 'won' || this.state === 'lost') return
+      if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return
       const cell = this.board[row][col]
       if (cell.revealed || cell.flagged) return
       if (!this.minesPlaced) {
         this.placeMines(row, col)
         this.setState('playing')
       }
+      this.finishReveal(row, col)
+    }
+
+    /**
+     * 异步路径入口：雷位已由后台（主进程/工作线程）生成，这里只做「应用 + 翻开」。
+     * 生成期间局面可能变化，故对所有前置条件做竞态检查，任一不满足即放弃。
+     * @returns {boolean} 是否成功应用并翻开
+     */
+    applyPlanAndReveal(row, col, plan) {
+      if (this.minesPlaced) return false
+      if (this.state === 'won' || this.state === 'lost') return false
+      if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return false
+      const cell = this.board[row][col]
+      if (cell.revealed || cell.flagged) return false
+      this.applyPlan(plan)
+      this.setState('playing')
+      this.finishReveal(row, col)
+      return true
+    }
+
+    /** 翻开本格并处理踩雷/胜负（调用方已完成全部前置守卫） */
+    finishReveal(row, col) {
+      const cell = this.board[row][col]
       if (cell.mine) {
         cell.revealed = true
         cell.exploded = true
@@ -271,7 +272,7 @@
         const cell = this.board[r][c]
         if (cell.revealed || cell.flagged || cell.mine) continue
         cell.revealed = true
-        cell.flagged = false
+        // 问号格不在上面的跳过条件里，会被洪泛翻开并清除问号标记
         cell.questioned = false
         this.revealedCount++
         this.markDirty(r, c)
@@ -292,6 +293,7 @@
 
     toggleFlag(row, col) {
       if (this.state === 'won' || this.state === 'lost') return
+      if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return
       const cell = this.board[row][col]
       if (cell.revealed) return
       if (this.state === 'ready') this.setState('playing')
@@ -310,6 +312,9 @@
     }
 
     chord(row, col) {
+      // 终局守卫与安卓版一致：终局后和弦不应产生任何效果
+      if (this.state === 'won' || this.state === 'lost') return false
+      if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return false
       const cell = this.board[row][col]
       if (!cell.revealed || cell.adjacentMines === 0) return false
       let adjFlags = 0

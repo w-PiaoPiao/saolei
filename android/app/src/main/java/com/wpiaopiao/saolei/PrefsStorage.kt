@@ -9,4 +9,8 @@ class PrefsStorage(private val prefs: SharedPreferences) : Storage {
     override fun putString(key: String, value: String) {
         prefs.edit().putString(key, value).apply()
     }
+
+    override fun remove(key: String) {
+        prefs.edit().remove(key).apply()
+    }
 }

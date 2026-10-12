@@ -162,4 +162,42 @@ class StatsManagerTest {
         assertEquals(80, h[0].bbbv)
         assertEquals(1, s.getHistory("beginner").size)
     }
+
+    @Test
+    fun `重置后 lastLevel 与最佳成绩真正清空（不再用空串哨兵）`() {
+        val storage = FakeStorage()
+        val s = StatsManager(storage)
+        s.onGameStart("beginner")
+        s.onGameWin(30)
+        s.reset()
+
+        assertNull("内存中的 lastLevel 应为 null", s.lastLevel)
+        assertNull("存储中的 lastLevel 键应被删除", storage.getString("stats.lastLevel"))
+        for (level in listOf("beginner", "intermediate", "expert", "custom")) {
+            assertTrue("bestTime 应含键 $level", s.bestTime.containsKey(level))
+            assertNull(s.bestTime[level])
+            assertTrue("bestBbbvPerSec 应含键 $level", s.bestBbbvPerSec.containsKey(level))
+            assertNull(s.bestBbbvPerSec[level])
+            assertNull("存储中的最佳时间键应被删除", storage.getString("stats.bestTime.$level"))
+            assertNull("存储中的最佳效率键应被删除", storage.getString("stats.bestBbbvPerSec.$level"))
+        }
+    }
+
+    @Test
+    fun `旧存档的空串 lastLevel 归一为 null（避免误报新纪录）`() {
+        val storage = FakeStorage()
+        storage.putString("stats.lastLevel", "")
+        val s = StatsManager(storage)
+        assertNull(s.lastLevel)
+    }
+
+    @Test
+    fun `getHistory 的 limit 为 0 或负数时返回空列表`() {
+        val s = StatsManager(FakeStorage())
+        s.onGameStart("beginner")
+        s.onGameWin(30, 45)
+        assertEquals(0, s.getHistory("beginner", 0).size)
+        assertEquals(0, s.getHistory("beginner", -5).size)
+        assertEquals(1, s.getHistory("beginner", 1).size)
+    }
 }
