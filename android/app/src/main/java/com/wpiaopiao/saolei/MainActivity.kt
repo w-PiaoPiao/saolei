@@ -42,6 +42,8 @@ class MainActivity : Activity() {
         gameView.setThemeValue(savedTheme ?: systemThemeValue(), persist = savedTheme != null)
         // 把持久化的静音状态同步进 GameView：否则菜单显示与首次静音切换都会错乱
         gameView.setMutedValue(muted)
+        // 无猜模式（生成可纯逻辑通关的雷局）：与静音同模式同步
+        gameView.setNoGuessValue(storage.getString("noGuess") == "true")
         // About 页显示运行时版本号（Gradle/CI 注入），避免与 build.gradle 双处硬编码漂移
         gameView.setAppVersion(versionName())
         setContentView(gameView)

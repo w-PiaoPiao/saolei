@@ -16,6 +16,10 @@ class GameEngine(level: String = "beginner") {
             "intermediate" to Level("中级", 16, 16, 40),
             "expert" to Level("高级", 16, 30, 99)
         )
+
+        // 无猜模式：重试上限与时间预算（与桌面版 src/config.js 的 NO_GUESS 对齐）
+        const val NO_GUESS_MAX_ATTEMPTS = 600
+        const val NO_GUESS_BUDGET_MS = 500L
     }
 
     var currentLevel: String = "beginner"
@@ -38,6 +42,17 @@ class GameEngine(level: String = "beginner") {
     /** internal set：测试构造已知雷局时需要直接设置（对齐 JS 版测试） */
     var minesPlaced: Boolean = false
         internal set
+
+    /** 无猜模式：布雷后校验可纯逻辑通关，不通过则重新生成（由 UI 开关控制） */
+    var noGuess: Boolean = false
+
+    /** 本局 3BV（理论最少点击数），布雷后计算；新局重置为 0 */
+    var bbbv: Int = 0
+        private set
+
+    /** 无猜生成是否降级为普通雷局（尝试次数/时间预算内未找到可解局时置位） */
+    var noGuessFallback: Boolean = false
+        private set
 
     var timer: Int = 0
     var flagCount: Int = 0
@@ -106,6 +121,8 @@ class GameEngine(level: String = "beginner") {
         timer = 0
         flagCount = 0
         revealedCount = 0
+        bbbv = 0
+        noGuessFallback = false
         board = createBoard()
         dirty.clear()
         markAllDirty()
@@ -119,9 +136,29 @@ class GameEngine(level: String = "beginner") {
     /**
      * 在安全格首次翻开后布雷：
      * - 安全格周围 3×3 永不布雷（保证首次点击绝对安全）
-     * - Fisher-Yates 洗牌，O(n) 且无拒绝采样退化
+     * - 普通模式 Fisher-Yates 洗牌，O(n) 且无拒绝采样退化
+     * - 无猜模式反复重生成，直到求解器判定可纯逻辑通关
      */
     fun placeMines(safeRow: Int, safeCol: Int) {
+        if (noGuess) {
+            placeMinesNoGuess(safeRow, safeCol)
+        } else {
+            randomizeMines(safeRow, safeCol)
+            noGuessFallback = false
+        }
+        minesPlaced = true
+        bbbv = compute3BV()
+        markAllDirty()
+    }
+
+    /** 随机布雷（先清空上一轮结果，供无猜重试复用同一张棋盘） */
+    private fun randomizeMines(safeRow: Int, safeCol: Int) {
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                board[r][c].mine = false
+                board[r][c].adjacentMines = 0
+            }
+        }
         val candidates = mutableListOf<Int>()
         for (r in 0 until rows) {
             for (c in 0 until cols) {
@@ -150,8 +187,72 @@ class GameEngine(level: String = "beginner") {
                 }
             }
         }
-        minesPlaced = true
-        markAllDirty()
+    }
+
+    /**
+     * 无猜布雷：重生成直到求解器判定可解。
+     * 受尝试次数与时间预算双重限制，预算内未找到时沿用最后一次生成的雷局，
+     * 并置 [noGuessFallback] 供 UI 提示。
+     */
+    private fun placeMinesNoGuess(safeRow: Int, safeCol: Int): Boolean {
+        val deadline = System.nanoTime() + NO_GUESS_BUDGET_MS * 1_000_000L
+        for (attempt in 0 until NO_GUESS_MAX_ATTEMPTS) {
+            randomizeMines(safeRow, safeCol)
+            if (Solver.solve(board, rows, cols, totalMines, safeRow, safeCol)) {
+                noGuessFallback = false
+                return true
+            }
+            if (System.nanoTime() >= deadline) break
+        }
+        noGuessFallback = true
+        return false
+    }
+
+    /**
+     * 3BV：完成本局所需的最少点击次数 —— 每个 0 区域算 1 次（洪泛展开会连带翻开其边界数字格），
+     * 未被 0 区域覆盖的数字格各算 1 次。用于效率统计（3BV/s）。
+     */
+    fun compute3BV(): Int {
+        val opened = BooleanArray(rows * cols)
+        val stack = ArrayDeque<Int>()
+        var bbbv = 0
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val cell = board[r][c]
+                val startIdx = r * cols + c
+                if (cell.mine || cell.adjacentMines != 0 || opened[startIdx]) continue
+                bbbv++
+                stack.addLast(startIdx)
+                while (stack.isNotEmpty()) {
+                    val idx = stack.removeLast()
+                    if (opened[idx]) continue
+                    val cr = idx / cols
+                    val cc = idx % cols
+                    val cur = board[cr][cc]
+                    if (cur.mine) continue
+                    opened[idx] = true
+                    if (cur.adjacentMines == 0) {
+                        for (dr in -1..1) {
+                            for (dc in -1..1) {
+                                if (dr == 0 && dc == 0) continue
+                                val nr = cr + dr
+                                val nc = cc + dc
+                                if (nr in 0 until rows && nc in 0 until cols && !opened[nr * cols + nc]) {
+                                    stack.addLast(nr * cols + nc)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val cell = board[r][c]
+                if (!cell.mine && cell.adjacentMines > 0 && !opened[r * cols + c]) bbbv++
+            }
+        }
+        return bbbv
     }
 
     fun countAdjacentMines(row: Int, col: Int): Int {

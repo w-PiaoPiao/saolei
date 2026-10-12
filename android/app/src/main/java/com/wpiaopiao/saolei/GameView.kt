@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -98,7 +99,7 @@ class GameView(
         private const val HUD_H = 64f
         private const val BOTTOM_H = 44f
         private const val PAD = 10f
-        private const val MIN_CELL = 8f
+        private const val MIN_CELL = 16f
         private const val MAX_CELL = 48f
         // 和弦失败 shake：时长 350ms，双轴错位抖动（仅周围未翻开的格子）
         private const val SHAKE_MS = 350L
@@ -111,12 +112,18 @@ class GameView(
         // 棋盘位图缓存四周留白：抖动最大位移 7px，留 10px 保证溢出落在缓存内
         private const val CACHE_PAD = 10
         private const val CONFIRM_DIALOG_H = 150f
+        // 效率曲线：难度顺序与取样局数
+        private val HISTORY_LEVELS = listOf("beginner", "intermediate", "expert", "custom")
+        private const val HISTORY_SAMPLE = 20
+        // 底部难度按钮：标签与对应难度（null = 自定义）
+        private val DIFF_BUTTON_LABELS = listOf("初级", "中级", "高级", "自定义")
+        private val DIFF_BUTTON_LEVELS = listOf<String?>("beginner", "intermediate", "expert", null)
 
         // 等宽粗体 Typeface 全局缓存：draw 路径禁止每帧 Typeface.create
         private val MONO_BOLD: Typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
     }
 
-    private enum class Overlay { None, Menu, Custom, Bindings, Stats, About, ConfirmNewGame }
+    private enum class Overlay { None, Menu, Custom, Bindings, Stats, About, ConfirmNewGame, History }
     private enum class BindRowKind { ACTION, RESET, CLOSE }
 
     private data class BindRow(val kind: BindRowKind, val action: String? = null, val label: String = "")
@@ -181,6 +188,23 @@ class GameView(
     // 胜利"新纪录"横幅
     private var recordBanner = ""
     private var recordBannerStart = 0L
+
+    // 效率曲线：当前查看的难度下标（HISTORY_LEVELS 顺序）
+    private var historyLevelIndex = 0
+
+    // 底部难度按钮：矩形布局复用（绘制与触摸命中共用），touchDiffButton 为触摸按下态
+    private val diffBtnRects = Array(4) { RectF() }
+    private var touchDiffButton: Int? = null
+
+    // 触摸按下已翻开数字格时的邻居预览（和弦示意，与桌面版按下高亮等价）
+    private var touchPreviewCell: Int? = null
+
+    // 大棋盘视口滚动偏移（像素，0 = 不滚动）；触摸拖动可浏览
+    private var viewOffsetX = 0
+    private var viewOffsetY = 0
+    private var draggingBoard = false
+    private var dragOffsetX0 = 0
+    private var dragOffsetY0 = 0
 
     // 棋盘静态层位图缓存：非动画帧只贴图 + 重绘动态格
     private var boardCache: Bitmap? = null
@@ -281,6 +305,7 @@ class GameView(
     private fun setCursor(r: Int, c: Int) {
         cursor = r to c
         cursorVisible = true
+        ensureCursorVisible(metrics())
         invalidate()
     }
 
@@ -346,10 +371,20 @@ class GameView(
         sound.setEnabled(!muted)
     }
 
+    /** MainActivity 启动时同步持久化的无猜模式（与 setMutedValue 同模式） */
+    fun setNoGuessValue(b: Boolean) {
+        engine.noGuess = b
+    }
+
     private fun toggleMute() {
         muted = !muted
         storage.putString("muted", muted.toString())
         sound.setEnabled(!muted)
+    }
+
+    private fun toggleNoGuess() {
+        engine.noGuess = !engine.noGuess
+        storage.putString("noGuess", engine.noGuess.toString())
     }
 
     // ---------- 新游戏 / 状态同步 ----------
@@ -383,6 +418,12 @@ class GameView(
         shakeStart = 0L
         recordBanner = ""
         recordBannerStart = 0L
+        // 新棋盘尺寸可能不同：复位视口滚动与触摸按下态
+        viewOffsetX = 0
+        viewOffsetY = 0
+        touchDiffButton = null
+        touchPreviewCell = null
+        draggingBoard = false
         facePressed = false
         prevState = "ready"
         engine.dirty.clear()
@@ -407,7 +448,7 @@ class GameView(
                 engine.autoFlagRemainingMines()
                 engine.revealAllSafe()
                 maybeShowRecordBanner()
-                stats.onGameWin(engine.timer)
+                stats.onGameWin(engine.timer, engine.bbbv)
             }
             if (s == "lost") {
                 stats.onGameLose(engine.timer)
@@ -534,6 +575,13 @@ class GameView(
         invalidate()
     }
 
+    private fun openHistory() {
+        historyLevelIndex = HISTORY_LEVELS.indexOf(engine.currentLevel).coerceAtLeast(0)
+        overlay = Overlay.History
+        manageTimer()
+        invalidate()
+    }
+
     private fun closeOverlay() {
         overlay = Overlay.None
         pendingRestart = null
@@ -587,11 +635,13 @@ class GameView(
             ) { setThemeValue(t.value) }
         }
         items += MenuItem(if (muted) "静音：开" else "静音：关") { toggleMute() }
+        items += MenuItem(if (engine.noGuess) "无猜模式：开" else "无猜模式：关") { toggleNoGuess() }
         items += MenuItem("键位设置...") { openBindings() }
         items += MenuItem("游戏统计...") {
             overlay = Overlay.Stats
             manageTimer()
         }
+        items += MenuItem("效率曲线...") { openHistory() }
         items += MenuItem("关于...") {
             overlay = Overlay.About
             manageTimer()
@@ -742,6 +792,20 @@ class GameView(
                 return true
             }
 
+            Overlay.History -> {
+                when {
+                    action == "moveLeft" || action == "moveUp" ->
+                        historyLevelIndex = (historyLevelIndex + HISTORY_LEVELS.size - 1) % HISTORY_LEVELS.size
+                    action == "moveRight" || action == "moveDown" ->
+                        historyLevelIndex = (historyLevelIndex + 1) % HISTORY_LEVELS.size
+                    action == "activate" || action == "flag" ||
+                        code == KeyCodes.BACK || action == "menu" -> closeOverlay()
+                    else -> return false
+                }
+                invalidate()
+                return true
+            }
+
             Overlay.Stats, Overlay.About -> {
                 if (action != null || code == KeyCodes.BACK) {
                     closeOverlay()
@@ -822,9 +886,14 @@ class GameView(
         ).coerceIn(MIN_CELL, MAX_CELL)
         val boardW = cell * engine.cols
         val boardH = cell * engine.rows
-        val boardX = (w - boardW) / 2f
-        val middleH = h - HUD_H - BOTTOM_H - 2 * PAD
-        val boardY = HUD_H + PAD + ((middleH - boardH) / 2f).coerceAtLeast(0f)
+        val view = boardViewport()
+        // 装得下就居中；装不下则从左上留白处开始，由视口滚动浏览
+        val boardX = if (boardW + 2 * PAD <= view.width()) (w - boardW) / 2f else PAD
+        val boardY = if (boardH + 2 * PAD <= view.height()) {
+            view.top + ((view.height() - boardH) / 2f).coerceAtLeast(0f)
+        } else {
+            view.top + PAD
+        }
         val m = Metrics(cell, boardX, boardY, boardW, boardH)
         metricsCache = m
         metricsW = width
@@ -832,6 +901,33 @@ class GameView(
         metricsRows = engine.rows
         metricsCols = engine.cols
         return m
+    }
+
+    /** 棋盘可视区（HUD 下沿到底栏上沿），滚动裁剪用 */
+    private fun boardViewport(): RectF =
+        RectF(0f, HUD_H, width.toFloat(), height - BOTTOM_H)
+
+    /** 滚动偏移夹紧到有效范围（内容比视口小时恒为 0） */
+    private fun clampOffsets(m: Metrics, view: RectF) {
+        val maxX = (m.w + 2 * PAD - view.width()).toInt().coerceAtLeast(0)
+        val maxY = (m.h + 2 * PAD - view.height()).toInt().coerceAtLeast(0)
+        viewOffsetX = viewOffsetX.coerceIn(0, maxX)
+        viewOffsetY = viewOffsetY.coerceIn(0, maxY)
+    }
+
+    /** 保证光标格在视口内（大棋盘时手柄移动光标会自动滚动跟随） */
+    private fun ensureCursorVisible(m: Metrics) {
+        val view = boardViewport()
+        val (r, c) = cursor
+        val left = m.x + c * m.cell
+        val top = m.y + r * m.cell
+        val right = left + m.cell
+        val bottom = top + m.cell
+        if (left - viewOffsetX < view.left) viewOffsetX = floor(left - view.left).toInt()
+        if (right - viewOffsetX > view.right) viewOffsetX = ceil(right - view.right).toInt()
+        if (top - viewOffsetY < view.top) viewOffsetY = floor(top - view.top).toInt()
+        if (bottom - viewOffsetY > view.bottom) viewOffsetY = ceil(bottom - view.bottom).toInt()
+        clampOffsets(m, view)
     }
 
     // ---------- 绘制 ----------
@@ -851,6 +947,7 @@ class GameView(
             Overlay.Stats -> drawStats(canvas)
             Overlay.About -> drawAbout(canvas)
             Overlay.ConfirmNewGame -> drawConfirmNewGame(canvas)
+            Overlay.History -> drawHistory(canvas)
             Overlay.None -> {}
         }
         if (!appActive && engine.state == "playing") drawPause(canvas)
@@ -1012,6 +1109,15 @@ class GameView(
             shakeStart = 0L
             shakeCells.clear()
         }
+        val view = boardViewport()
+        clampOffsets(m, view)
+
+        // 超大棋盘启用视口滚动：只绘制可见区域（棋盘层位图坐标不受滚动影响）
+        val save = canvas.save()
+        canvas.clipRect(view)
+        if (viewOffsetX != 0 || viewOffsetY != 0) {
+            canvas.translate(-viewOffsetX.toFloat(), -viewOffsetY.toFloat())
+        }
         canvas.drawBitmap(ensureBoardCache(m, now), boardCacheLeft, boardCacheTop, null)
 
         // 动态格（翻开动画中的格 + 抖动格及其邻居）覆盖重绘到静态层之上
@@ -1021,6 +1127,56 @@ class GameView(
             for (idx in dynamic) drawCell(canvas, m, idx / cols, idx % cols, now, animate = true)
         }
         drawCursor(canvas, m)
+        drawPressedPreview(canvas, m)
+        canvas.restoreToCount(save)
+
+        drawScrollIndicator(canvas, m, view)
+    }
+
+    /** 垂直滚动指示条：仅内容超出视口时显示，提示视口外还有内容 */
+    private fun drawScrollIndicator(canvas: Canvas, m: Metrics, view: RectF) {
+        val contentH = m.h + 2 * PAD
+        if (contentH <= view.height()) return
+        val trackX = width - 7f
+        val trackTop = view.top + 6f
+        val trackBottom = view.bottom - 6f
+        val trackH = trackBottom - trackTop
+        paint.style = Paint.Style.FILL
+        paint.color = theme.colors.borderDark
+        paint.alpha = 110
+        canvas.drawRect(trackX, trackTop, trackX + 4f, trackBottom, paint)
+        val maxOff = (contentH - view.height()).coerceAtLeast(1f)
+        val barH = (trackH * (view.height() / contentH)).coerceAtLeast(28f)
+        val barY = trackTop + (trackH - barH) * (viewOffsetY / maxOff)
+        paint.color = theme.colors.text
+        paint.alpha = 190
+        canvas.drawRect(trackX, barY, trackX + 4f, barY + barH, paint)
+        paint.alpha = 255
+    }
+
+    /** 触摸按下已翻开数字格时预览和弦范围（与桌面版按下高亮等价） */
+    private fun drawPressedPreview(canvas: Canvas, m: Metrics) {
+        val idx = touchPreviewCell ?: return
+        val cols = engine.cols
+        val r0 = idx / cols
+        val c0 = idx % cols
+        paint.style = Paint.Style.FILL
+        paint.color = theme.colors.bgActive
+        paint.alpha = 150
+        for (dr in -1..1) {
+            for (dc in -1..1) {
+                if (dr == 0 && dc == 0) continue
+                val r = r0 + dr
+                val c = c0 + dc
+                if (r !in 0 until engine.rows || c !in 0 until engine.cols) continue
+                tmpRect.set(
+                    m.x + c * m.cell + 1f, m.y + r * m.cell + 1f,
+                    m.x + (c + 1) * m.cell - 1f, m.y + (r + 1) * m.cell - 1f
+                )
+                canvas.drawRect(tmpRect, paint)
+            }
+        }
+        paint.alpha = 255
     }
 
     /**
@@ -1222,38 +1378,30 @@ class GameView(
         canvas.drawRect(rect, paint)
         drawBevel(canvas, rect, 2f, theme.colors.borderDark, theme.colors.borderLight)
 
-        // 难度按钮
-        val labels = listOf("初级", "中级", "高级", "自定义")
-        val levels = listOf("beginner", "intermediate", "expert", null)
-        val btnH = BOTTOM_H - 14f
-        var x = PAD + 4f
-        val btnY = h - BOTTOM_H + 7f
-        textPaint.reset()
-        textPaint.isAntiAlias = true
-        textPaint.typeface = MONO_BOLD
-        textPaint.textSize = 14f
-        for (i in labels.indices) {
-            val label = labels[i]
-            val level = levels[i]
-            val btnW = textPaint.measureText(label) + 22f
-            val btn = tmpRect2
-            btn.set(x, btnY, x + btnW, btnY + btnH)
-            paint.style = Paint.Style.FILL
+        // 难度按钮（触摸可直接点按，与手柄菜单切换等价）
+        layoutDiffButtons()
+        for (i in DIFF_BUTTON_LABELS.indices) {
+            val level = DIFF_BUTTON_LEVELS[i]
+            val btn = diffBtnRects[i]
             val isActive = when (level) {
                 null -> engine.currentLevel == "custom"
                 else -> engine.currentLevel == level && engine.currentCustom == null
             }
-            paint.color = if (isActive) theme.colors.bgActive else theme.colors.bgCell
+            val highlighted = isActive || touchDiffButton == i
+            paint.style = Paint.Style.FILL
+            paint.color = if (highlighted) theme.colors.bgActive else theme.colors.bgCell
             canvas.drawRect(btn, paint)
             drawBevel(
                 canvas, btn, 2f,
-                if (isActive) theme.colors.borderDark else theme.colors.borderLight,
-                if (isActive) theme.colors.borderLight else theme.colors.borderDark
+                if (highlighted) theme.colors.borderDark else theme.colors.borderLight,
+                if (highlighted) theme.colors.borderLight else theme.colors.borderDark
             )
             textPaint.color = theme.colors.text
             textPaint.textAlign = Paint.Align.CENTER
-            canvas.drawText(label, btn.centerX(), textBaseline(btn.centerY(), textPaint), textPaint)
-            x += btnW + 6f
+            canvas.drawText(
+                DIFF_BUTTON_LABELS[i], btn.centerX(),
+                textBaseline(btn.centerY(), textPaint), textPaint
+            )
         }
 
         // 键位提示
@@ -1266,6 +1414,31 @@ class GameView(
             "${bindings.getDisplayKey("flag")}标雷  " +
             "${bindings.getDisplayKey("menu")}菜单"
         canvas.drawText(hint, w - PAD - 4f, textBaseline(rect.centerY(), textPaint), textPaint)
+    }
+
+    /** 布局底部难度按钮：绘制与触摸命中共用同一套计算，避免两处漂移 */
+    private fun layoutDiffButtons() {
+        val btnH = BOTTOM_H - 14f
+        val btnY = height - BOTTOM_H + 7f
+        textPaint.reset()
+        textPaint.isAntiAlias = true
+        textPaint.typeface = MONO_BOLD
+        textPaint.textSize = 14f
+        var x = PAD + 4f
+        for (i in DIFF_BUTTON_LABELS.indices) {
+            val btnW = textPaint.measureText(DIFF_BUTTON_LABELS[i]) + 22f
+            diffBtnRects[i].set(x, btnY, x + btnW, btnY + btnH)
+            x += btnW + 6f
+        }
+    }
+
+    /** 触摸命中的难度按钮下标；未命中返回 null */
+    private fun diffButtonIndex(x: Float, y: Float): Int? {
+        layoutDiffButtons()
+        for (i in diffBtnRects.indices) {
+            if (diffBtnRects[i].contains(x, y)) return i
+        }
+        return null
     }
 
     private fun drawPause(canvas: Canvas) {
@@ -1542,6 +1715,7 @@ class GameView(
     private fun drawStats(canvas: Canvas) {
         val s = stats.getSummary()
         val fmtTime = { t: Int? -> if (t == null) "--:--" else formatTime(t) }
+        val fmtRate = { r: Double? -> if (r == null) "--" else String.format("%.2f", r) }
         val lines = listOf(
             "总局数: ${s.totalGames}",
             "胜利: ${s.gamesWon} / 失败: ${s.gamesLost}",
@@ -1553,7 +1727,12 @@ class GameView(
             "　初级: ${fmtTime(s.bestTime["beginner"])}",
             "　中级: ${fmtTime(s.bestTime["intermediate"])}",
             "　高级: ${fmtTime(s.bestTime["expert"])}",
-            "　自定义: ${fmtTime(s.bestTime["custom"])}"
+            "　自定义: ${fmtTime(s.bestTime["custom"])}",
+            "最佳效率(3BV/s):",
+            "　初级: ${fmtRate(s.bestBbbvPerSec["beginner"])}",
+            "　中级: ${fmtRate(s.bestBbbvPerSec["intermediate"])}",
+            "　高级: ${fmtRate(s.bestBbbvPerSec["expert"])}",
+            "　自定义: ${fmtRate(s.bestBbbvPerSec["custom"])}"
         )
         val contentH = 46f + lines.size * 24f + 10f
         drawDialog(canvas, "游戏统计", contentH) { _, rect ->
@@ -1569,6 +1748,103 @@ class GameView(
                 )
             }
         }
+    }
+
+    // ---------- 效率曲线 ----------
+
+    /** 最近 N 局 3BV/s 折线（左右切换难度）；空数据显示占位文案 */
+    private fun drawHistory(canvas: Canvas) {
+        val level = HISTORY_LEVELS[historyLevelIndex]
+        val entries = stats.getHistory(level, HISTORY_SAMPLE)
+        drawDialog(canvas, "效率曲线（3BV/s）", 300f) { c, rect ->
+            textPaint.reset()
+            textPaint.isAntiAlias = true
+            textPaint.textSize = 15f
+            textPaint.color = theme.colors.text
+            textPaint.textAlign = Paint.Align.CENTER
+            val label = GameEngine.LEVELS[level]?.label ?: "自定义"
+            c.drawText("◀ $label ▶", rect.centerX(), rect.top + 52f, textPaint)
+
+            val left = rect.left + 46f
+            val top = rect.top + 72f
+            val right = rect.right - 18f
+            val bottom = rect.bottom - 56f
+
+            if (entries.isEmpty()) {
+                textPaint.textSize = 14f
+                c.drawText("该难度暂无胜局记录", rect.centerX(), (top + bottom) / 2f, textPaint)
+                drawHistoryHint(c, rect)
+                return@drawDialog
+            }
+
+            val rates = entries.map { it.bbbv.toFloat() / it.time }
+            val maxRate = rates.maxOrNull() ?: 1f
+            val yMax = (ceil(maxRate * 1.15f * 10f) / 10f).coerceAtLeast(0.5f)
+
+            fun xAt(i: Int): Float =
+                if (entries.size == 1) (left + right) / 2f
+                else left + (right - left) * i / (entries.size - 1).toFloat()
+
+            fun yAt(v: Float): Float = bottom - (bottom - top) * (v / yMax)
+
+            // 网格线与刻度
+            textPaint.textSize = 11f
+            textPaint.textAlign = Paint.Align.RIGHT
+            for (f in floatArrayOf(0f, 0.5f, 1f)) {
+                val v = yMax * f
+                val y = yAt(v)
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 1f
+                paint.color = theme.colors.borderRevealed
+                c.drawLine(left, y, right, y, paint)
+                textPaint.color = theme.colors.text
+                c.drawText(String.format("%.1f", v), left - 6f, y + 4f, textPaint)
+            }
+
+            // 平均线（虚线）
+            val avg = rates.average().toFloat()
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.5f
+            paint.color = theme.colors.led
+            paint.pathEffect = DashPathEffect(floatArrayOf(6f, 5f), 0f)
+            c.drawLine(left, yAt(avg), right, yAt(avg), paint)
+            paint.pathEffect = null
+
+            // 折线
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2f
+            paint.color = theme.colors.text
+            for (i in 1 until rates.size) {
+                c.drawLine(xAt(i - 1), yAt(rates[i - 1]), xAt(i), yAt(rates[i]), paint)
+            }
+
+            // 数据点
+            paint.style = Paint.Style.FILL
+            paint.color = theme.colors.led
+            for (i in rates.indices) c.drawCircle(xAt(i), yAt(rates[i]), 3f, paint)
+
+            // 统计行
+            textPaint.reset()
+            textPaint.isAntiAlias = true
+            textPaint.textSize = 13f
+            textPaint.color = theme.colors.text
+            textPaint.textAlign = Paint.Align.CENTER
+            c.drawText(
+                "样本 ${entries.size} 局 · 平均 ${String.format("%.2f", avg)} · " +
+                    "最佳 ${String.format("%.2f", maxRate)} 3BV/s",
+                rect.centerX(), rect.bottom - 32f, textPaint
+            )
+            drawHistoryHint(c, rect)
+        }
+    }
+
+    private fun drawHistoryHint(canvas: Canvas, rect: RectF) {
+        textPaint.reset()
+        textPaint.isAntiAlias = true
+        textPaint.textSize = 12f
+        textPaint.color = theme.colors.text
+        textPaint.textAlign = Paint.Align.CENTER
+        canvas.drawText("左右切换难度 · 任意键 / Back 关闭", rect.centerX(), rect.bottom - 12f, textPaint)
     }
 
     private fun drawAbout(canvas: Canvas) {
@@ -1604,6 +1880,7 @@ class GameView(
         val cell = touchCell
         if (cell != null && canAct()) {
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            touchPreviewCell = null
             flagAt(cell.first, cell.second)
             touchFlagged = true
         }
@@ -1640,9 +1917,21 @@ class GameView(
             MotionEvent.ACTION_DOWN -> {
                 touchDownX = event.x
                 touchDownY = event.y
-                touchCell = cellAt(event.x, event.y)
                 touchFlagged = false
-                if (touchCell == null) {
+                touchPreviewCell = null
+                draggingBoard = false
+                // 难度按钮（无覆盖层时；触摸可直接切难度，走与手柄一致的确认保护）
+                if (overlay == Overlay.None) {
+                    val diffIdx = diffButtonIndex(event.x, event.y)
+                    if (diffIdx != null) {
+                        touchDiffButton = diffIdx
+                        invalidate()
+                        return true
+                    }
+                }
+                touchCell = cellAt(event.x, event.y)
+                val cell = touchCell
+                if (cell == null) {
                     // 表情按钮仅在无覆盖层时可点（否则对话框打开时点顶部会误重开）
                     if (overlay == Overlay.None && faceHit(event.x, event.y)) {
                         facePressed = true
@@ -1650,6 +1939,12 @@ class GameView(
                         return true
                     }
                     return false
+                }
+                // 按下已翻开数字格：预览和弦将影响的周围格
+                val data = engine.board[cell.first][cell.second]
+                if (data.revealed && data.adjacentMines > 0 && canAct()) {
+                    touchPreviewCell = cell.first * engine.cols + cell.second
+                    invalidate()
                 }
                 cursorVisible = false
                 postDelayed(longPressRunnable, LONG_PRESS_MS)
@@ -1659,19 +1954,60 @@ class GameView(
                 // 第二根手指落下：取消当前待定手势，避免多指误触发翻开/标雷/重开
                 removeCallbacks(longPressRunnable)
                 touchCell = null
+                touchPreviewCell = null
+                touchDiffButton = null
+                draggingBoard = false
                 facePressed = false
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
+                if (touchDiffButton != null) {
+                    // 手指在按钮排上滑动：实时高亮所在按钮
+                    val idx = diffButtonIndex(event.x, event.y)
+                    if (idx != touchDiffButton) {
+                        touchDiffButton = idx
+                        invalidate()
+                    }
+                    return true
+                }
                 if (touchCell != null &&
                     (abs(event.x - touchDownX) > 24f || abs(event.y - touchDownY) > 24f)
                 ) {
                     removeCallbacks(longPressRunnable)
                     touchCell = null
+                    touchPreviewCell = null
+                    // 手势转为拖动浏览（超大棋盘的视口滚动）
+                    draggingBoard = true
+                    dragOffsetX0 = viewOffsetX
+                    dragOffsetY0 = viewOffsetY
+                    invalidate()
+                }
+                if (draggingBoard) {
+                    val m = metrics()
+                    viewOffsetX = dragOffsetX0 - (event.x - touchDownX).toInt()
+                    viewOffsetY = dragOffsetY0 - (event.y - touchDownY).toInt()
+                    clampOffsets(m, boardViewport())
+                    invalidate()
                 }
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                if (touchDiffButton != null) {
+                    val pressed = touchDiffButton
+                    touchDiffButton = null
+                    if (pressed != null && pressed == diffButtonIndex(event.x, event.y)) {
+                        val level = DIFF_BUTTON_LEVELS[pressed]
+                        if (level == null) openCustom() else requestRestart { startGame(level) }
+                    } else {
+                        invalidate()
+                    }
+                    return true
+                }
+                if (draggingBoard) {
+                    draggingBoard = false
+                    return true
+                }
+                touchPreviewCell = null
                 if (facePressed) {
                     facePressed = false
                     // 必须在表情按钮上松开才重开（按住拖走再松开不应触发）；进行中先确认
@@ -1694,6 +2030,9 @@ class GameView(
             MotionEvent.ACTION_CANCEL -> {
                 removeCallbacks(longPressRunnable)
                 touchCell = null
+                touchPreviewCell = null
+                touchDiffButton = null
+                draggingBoard = false
                 facePressed = false
                 return true
             }
@@ -1704,9 +2043,11 @@ class GameView(
     private fun cellAt(x: Float, y: Float): Pair<Int, Int>? {
         if (overlay != Overlay.None) return null
         val m = metrics()
-        if (x < m.x || x >= m.x + m.w || y < m.y || y >= m.y + m.h) return null
-        val r = ((y - m.y) / m.cell).toInt()
-        val c = ((x - m.x) / m.cell).toInt()
+        val px = x + viewOffsetX
+        val py = y + viewOffsetY
+        if (px < m.x || px >= m.x + m.w || py < m.y || py >= m.y + m.h) return null
+        val r = ((py - m.y) / m.cell).toInt()
+        val c = ((px - m.x) / m.cell).toInt()
         if (r !in 0 until engine.rows || c !in 0 until engine.cols) return null
         return r to c
     }

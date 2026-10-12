@@ -19,8 +19,12 @@ Electron 跨平台桌面应用 / Cross-platform desktop app for macOS · Windows
 | 首次点击安全：3×3 无雷 + 空白格大面积展开 | Safe first click: 3×3 safe zone + guaranteed zero-cell |
 | Web Audio API 合成 6 种音效（零外部文件） | 6 Web Audio API sound effects (no external files) |
 | 游戏统计：总局、胜率、连胜、最快时间 | Game stats: games, win rate, streaks, best times |
+| 无猜模式：生成保证可纯逻辑推理通关的雷局 | No-guess mode: boards always solvable by pure logic |
+| 3BV 效率统计：各难度最佳 3BV/s + 最近 20 局效率曲线 | 3BV efficiency: best 3BV/s per level + last-20-games chart |
 | 6 套主题切换（偏好持久化） | 6 themes (persistent preference) |
 | 和弦失败 shake 动画、左右键邻居格凹陷效果 | Shake animation on chord fail, press-down neighbor highlight |
+| 对局保护与终局反馈：重开需确认、失败错旗打叉、破纪录横幅 | Restart confirm, wrong-flag cross on loss, new-record banner |
+| 主题默认跟随系统深浅色（未手动选过主题时） | Follows system light/dark until a theme is picked manually |
 | 内置单元测试（node:test，`npm test`） | Built-in unit tests (node:test, `npm test`) |
 
 ---
@@ -73,9 +77,12 @@ Electron + Vanilla JavaScript + CSS3 + node:test (no framework dependencies)
 - **引擎移植**：`android/core` 纯 JVM 模块逐方法移植桌面版 `game.js` / `movement.js` / `keybindings.js` / `stats.js`，JUnit 单元测试覆盖
 - **手柄操作**：方向键移动（斜向 + 长按重复）、B=翻开/和弦、A=标雷（旗→问号→取消）、Start=新游戏、Select=菜单
 - **键位自定义**：菜单 → 键位设置，任意键可重绑（含按键测试屏），持久化保存
+- **无猜模式**：菜单开关；开启后布雷会反复重生成，直到求解器判定可纯逻辑通关（单点 + 子集 + 全局规则，保守判定，不会放出必猜局）
+- **3BV 效率统计与曲线**：统计页显示各难度最佳 3BV/s；菜单「效率曲线」查看最近 20 局折线（含平均线，左右键切换难度）
 - **防误触与终局反馈**：对局进行中重开（Start / 表情 / 菜单换难度）先弹确认框（默认停在「取消」）；失败时插错的旗打红叉，胜利破纪录弹「新纪录」横幅
 - **跟随系统深浅色**：未手动选过主题时跟随系统深/浅色（含运行中切换），在菜单里选过主题后固定
 - **性能**：棋盘静态层位图缓存（缓冲区复用），非动画帧只贴图 + 重绘变化格，50×50 大棋盘不再每帧重绘全部格子
+- **触摸增强**：底部难度按钮可直接点按（走与手柄一致的重开确认保护）；按下已翻开数字格预览和弦范围；超大棋盘（如 50×50）启用视口滚动，触摸拖动或手柄光标移动自动跟随浏览
 - **其余对齐桌面版**：三档难度 + 自定义雷区、6 套主题、6 种运行时合成音效、统计、暂停恢复、首次点击安全、和弦失败 shake
 
 ### 构建与安装
