@@ -1,5 +1,7 @@
 # 扫雷 / Minesweeper 🎯
 
+**中文** | [English](README.en.md)
+
 经典 Windows XP 风格扫雷游戏 · Classic Windows XP-style Minesweeper
 
 Electron 跨平台桌面应用 / Cross-platform desktop app for macOS · Windows · Linux
