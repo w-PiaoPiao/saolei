@@ -64,7 +64,18 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease --console=plain
+        run: |
+          # 标签 v1.2.3 → versionName=1.2.3、versionCode=10203（About 页读运行时 versionName）
+          NAME="${GITHUB_REF_NAME#v}"
+          if [[ "$NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            IFS=. read -r MAJOR MINOR PATCH <<< "$NAME"
+            ./gradlew :app:assembleRelease \
+              -PversionName="$NAME" -PversionCode="$((MAJOR * 10000 + MINOR * 100 + PATCH))" \
+              --console=plain
+          else
+            echo "标签 $GITHUB_REF_NAME 非 vX.Y.Z 形式，沿用默认版本号"
+            ./gradlew :app:assembleRelease --console=plain
+          fi
 
       - name: 发布到 GitHub Releases
         if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}

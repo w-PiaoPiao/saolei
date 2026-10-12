@@ -15,7 +15,7 @@ Electron 跨平台桌面应用 / Cross-platform desktop app for macOS · Windows
 | 超大棋盘自动缩放格子尺寸，窗口只放大不缩小 | Auto cell scaling for huge boards; window only grows, never shrinks |
 | 原生菜单栏（F2 新游戏） | Native menu bar (F2 for new game) |
 | 键盘全操作 + 可自定义快捷键 | Full keyboard control with rebindable keys |
-| 和弦操作：双击或左右键同时按下 | Chord: double-click or left+right click on numbers |
+| 和弦操作：双击、中键或左右键同时按下 | Chord: double-click, middle-click, or left+right click on numbers |
 | 首次点击安全：3×3 无雷 + 空白格大面积展开 | Safe first click: 3×3 safe zone + guaranteed zero-cell |
 | Web Audio API 合成 6 种音效（零外部文件） | 6 Web Audio API sound effects (no external files) |
 | 游戏统计：总局、胜率、连胜、最快时间 | Game stats: games, win rate, streaks, best times |
@@ -73,6 +73,9 @@ Electron + Vanilla JavaScript + CSS3 + node:test (no framework dependencies)
 - **引擎移植**：`android/core` 纯 JVM 模块逐方法移植桌面版 `game.js` / `movement.js` / `keybindings.js` / `stats.js`，JUnit 单元测试覆盖
 - **手柄操作**：方向键移动（斜向 + 长按重复）、B=翻开/和弦、A=标雷（旗→问号→取消）、Start=新游戏、Select=菜单
 - **键位自定义**：菜单 → 键位设置，任意键可重绑（含按键测试屏），持久化保存
+- **防误触与终局反馈**：对局进行中重开（Start / 表情 / 菜单换难度）先弹确认框（默认停在「取消」）；失败时插错的旗打红叉，胜利破纪录弹「新纪录」横幅
+- **跟随系统深浅色**：未手动选过主题时跟随系统深/浅色（含运行中切换），在菜单里选过主题后固定
+- **性能**：棋盘静态层位图缓存（缓冲区复用），非动画帧只贴图 + 重绘变化格，50×50 大棋盘不再每帧重绘全部格子
 - **其余对齐桌面版**：三档难度 + 自定义雷区、6 套主题、6 种运行时合成音效、统计、暂停恢复、首次点击安全、和弦失败 shake
 
 ### 构建与安装
@@ -85,7 +88,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 > 故障排查：若本机项目路径含非 ASCII 字符（如中文目录）导致 Kotlin 编译报错或路径被转义为 `uXXXX`，把 `android/` 复制到纯 ASCII 路径下构建即可（GitHub CI 不受影响）。
 
-KPA 需先在系统设置中开启「开发者选项 → USB 调试」。调试包直接侧载安装；正式发布用 `assembleRelease` 并配置签名。
+KPA 需先在系统设置中开启「开发者选项 → USB 调试」。调试包直接侧载安装；正式发布用 `assembleRelease` 并配置签名（Release 已开启 R8 压缩混淆，APK 从约 2MB 降至约 170KB）。
 
 ### 操作说明
 
@@ -94,16 +97,16 @@ KPA 需先在系统设置中开启「开发者选项 → USB 调试」。调试�
 | 方向键 | 移动光标（可斜向，长按连续移动） |
 | B | 翻开格子；在已翻开数字格上按 = 和弦 |
 | A | 标雷（插旗 → 问号 → 取消） |
-| Start | 新游戏 |
+| Start | 新游戏（对局进行中需二次确认） |
 | Select | 菜单（难度/主题/键位/统计等） |
 | Back | 关闭对话框 / 打开菜单 |
 
-触摸（可选）：点按=翻开/和弦，长按=标雷，点表情=新游戏。
+触摸（可选）：点按=翻开/和弦，长按=标雷，点表情=新游戏（进行中弹确认框，可点按钮或 Back 取消）；重开确认框支持触摸操作。
 
 ## CI / 自动化发布
 
 - **桌面版**：推 `desktop-v*` 标签（如 `desktop-v1.3.0`）触发 [GitHub Actions](.github/workflows/build.yml)：先跑单元测试，再构建 macOS / Windows / Linux 三平台安装包并自动发布到 GitHub Releases。
-- **安卓版**：推 `v*` 标签（如 `v1.2.1`）触发 [android.yml](.github/workflows/android.yml)：跑单测、构建 Debug APK；若仓库配置了签名 secrets（`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`），还会构建**签名正式版**并自动发布到 GitHub Releases。
+- **安卓版**：推 `v*` 标签（如 `v1.2.1`）触发 [android.yml](.github/workflows/android.yml)：跑单测、构建 Debug APK；若仓库配置了签名 secrets（`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`），还会构建**签名正式版**并自动发布到 GitHub Releases。发布版的版本号由标签注入（`v1.2.3` → `versionName=1.2.3`、`versionCode=10203`），游戏内「关于」页显示运行时版本号，不再硬编码。
 
 ### 安卓正式版签名
 

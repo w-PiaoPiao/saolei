@@ -8,4 +8,7 @@ class Cell {
     var questioned = false
     var adjacentMines = 0
     var exploded = false
+
+    /** 失败终局时置位：插在非雷格上的旗（UI 绘制红叉提示） */
+    var wrongFlag = false
 }

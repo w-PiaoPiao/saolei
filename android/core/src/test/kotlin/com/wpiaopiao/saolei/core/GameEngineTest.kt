@@ -164,6 +164,28 @@ class GameEngineTest {
     }
 
     @Test
+    fun `踩雷终局：非雷格上的旗标记为错误旗`() {
+        val g = setupEngine("beginner", listOf(0 to 0))
+        g.toggleFlag(5, 5)                 // 非雷格插旗
+        g.reveal(0, 0)                     // 踩雷判负
+        assertEquals("lost", g.state)
+        assertTrue("非雷格上的旗应标记为错误旗", g.board[5][5].wrongFlag)
+        assertTrue("错误旗保留旗状态供 UI 叠加红叉", g.board[5][5].flagged)
+        assertFalse("雷格本身不是错误旗", g.board[0][0].wrongFlag)
+    }
+
+    @Test
+    fun `新局重置清除错误旗标记`() {
+        val g = setupEngine("beginner", listOf(0 to 0, 1 to 1))
+        g.toggleFlag(5, 5)
+        g.reveal(0, 0)
+        assertEquals("lost", g.state)
+        g.init("beginner")
+        assertFalse(g.board[5][5].wrongFlag)
+        assertFalse(g.board[0][0].flagged)
+    }
+
+    @Test
     fun `终局后引擎拒绝继续操作`() {
         val g = setupEngine("beginner", listOf(0 to 0))
         g.reveal(0, 0)

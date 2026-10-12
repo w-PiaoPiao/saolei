@@ -271,7 +271,13 @@ class GameEngine(level: String = "beginner") {
     fun revealAllMines() {
         for (r in 0 until rows) {
             for (c in 0 until cols) {
-                if (board[r][c].mine) board[r][c].revealed = true
+                val cell = board[r][c]
+                if (cell.mine) {
+                    cell.revealed = true
+                } else if (cell.flagged) {
+                    // 非雷格上的旗：标记错误旗，UI 绘制红叉
+                    cell.wrongFlag = true
+                }
             }
         }
         markAllDirty()
