@@ -15,6 +15,7 @@ Electron 跨平台桌面应用 / Cross-platform desktop app for macOS · Windows
 | 超大棋盘自动缩放格子尺寸（可读性下限 + 滚动兜底），窗口只放大不缩小 | Auto cell scaling with a readable floor and scroll fallback; window only grows |
 | 无猜生成在后台线程（worker）执行，首点不冻结界面并显示「生成中」 | No-guess generation runs in a worker thread; first click never freezes the UI |
 | 原生菜单栏（F2 新游戏） | Native menu bar (F2 for new game) |
+| 单实例运行：重复启动会聚焦已有窗口，避免双开互相覆盖统计 | Single instance: relaunching focuses the existing window |
 | 键盘全操作 + 可自定义快捷键 | Full keyboard control with rebindable keys |
 | 和弦操作：双击、中键或左右键同时按下 | Chord: double-click, middle-click, or left+right click on numbers |
 | 首次点击安全：3×3 无雷 + 空白格大面积展开 | Safe first click: 3×3 safe zone + guaranteed zero-cell |
@@ -110,7 +111,7 @@ KPA 需先在系统设置中开启「开发者选项 → USB 调试」。调试�
 | Select | 菜单（难度/主题/键位/统计等） |
 | Back | 关闭对话框 / 打开菜单 |
 
-触摸（可选）：点按=翻开/和弦，长按=标雷，点表情=新游戏（进行中弹确认框，可点按钮或 Back 取消）；重开确认框支持触摸操作。
+触摸（可选）：点按=翻开/和弦，长按=标雷，点表情=新游戏；超大棋盘可拖动浏览。**全部对话框都支持触摸**——菜单项点按执行，自定义雷区点行选中、点 ◀▶ 调整数值、点「确定/取消」提交，统计/关于点按关闭，效率曲线左右箭头切换难度，键位设置点行进入录制；点对话框外空白等价 Back 关闭。
 
 ## CI / 自动化发布
 
