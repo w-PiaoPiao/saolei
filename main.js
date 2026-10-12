@@ -4,6 +4,10 @@ const { LEVELS, THEMES, WINDOW } = require('./src/config.js')
 
 let mainWindow = null
 let muteMenuItem = null
+// 菜单项引用：创建菜单时按固定结构抓取，更新状态不再依赖中文 label 匹配
+let diffRadioItems = []
+let themeRadioItems = []
+const DIFF_KEYS = Object.keys(LEVELS)
 
 function sendToRenderer(action, payload = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -41,7 +45,7 @@ function createMenu() {
           }
         }),
         { type: 'separator' },
-        { label: '自定义...', click: () => sendToRenderer('custom') }
+        { label: '自定义...', type: 'radio', checked: false, click: () => sendToRenderer('custom') }
       ]
     },
     {
@@ -64,32 +68,23 @@ function createMenu() {
   ]
 
   const menu = Menu.buildFromTemplate(template)
-  muteMenuItem = menu.items
-    .find((m) => m.label === '游戏')
-    .submenu.items.find((m) => m.label === '静音')
+  // 菜单结构固定：0=游戏 1=难度 2=主题 3=帮助
+  muteMenuItem = menu.items[0].submenu.items.find((m) => m.label === '静音')
+  diffRadioItems = menu.items[1].submenu.items.filter((m) => m.type === 'radio')
+  themeRadioItems = menu.items[2].submenu.items.filter((m) => m.type === 'radio')
   Menu.setApplicationMenu(menu)
 }
 
 function updateMenuDifficulty(level) {
-  const label = LEVELS[level] ? LEVELS[level].label : '自定义'
-  const menu = Menu.getApplicationMenu()
-  if (!menu) return
-  const diffMenu = menu.items.find((m) => m.label === '难度')
-  if (!diffMenu) return
-  diffMenu.submenu.items.forEach((item) => {
-    if (item.type === 'radio') item.checked = item.label.startsWith(label)
+  // 前 DIFF_KEYS.length 个 radio 对应预设难度，最后一个是「自定义」
+  diffRadioItems.forEach((item, i) => {
+    item.checked = i < DIFF_KEYS.length ? DIFF_KEYS[i] === level : level === 'custom'
   })
 }
 
 function updateMenuTheme(theme) {
-  const def = THEMES.find((t) => t.value === theme)
-  const label = def ? def.label : THEMES[0].label
-  const menu = Menu.getApplicationMenu()
-  if (!menu) return
-  const themeMenu = menu.items.find((m) => m.label === '主题')
-  if (!themeMenu) return
-  themeMenu.submenu.items.forEach((item) => {
-    if (item.type === 'radio') item.checked = item.label === label
+  themeRadioItems.forEach((item, i) => {
+    item.checked = THEMES[i].value === theme
   })
 }
 
@@ -138,6 +133,9 @@ ipcMain.on('fit-window', (event, width, height) => {
 ipcMain.on('update-menu-difficulty', (_, level) => updateMenuDifficulty(level))
 ipcMain.on('update-menu-theme', (_, theme) => updateMenuTheme(theme))
 ipcMain.on('update-menu-mute', (_, muted) => updateMenuMute(muted))
+
+// 渲染进程读取应用版本（package.json 单一来源）
+ipcMain.handle('app-version', () => app.getVersion())
 
 // ---------- 生命周期 ----------
 

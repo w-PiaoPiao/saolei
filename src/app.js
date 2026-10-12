@@ -15,21 +15,40 @@
 
   // ---------- 计时器 ----------
 
+  // 墙钟锚点计时：interval 只负责驱动刷新，秒数由 Date.now() 差值计算得出，
+  // 彻底消除 setInterval 逐拍累加的漂移；暂停时把已走时间存入 timerBaseMs。
+  let timerBaseMs = 0
+  let timerAnchorMs = null
+
+  function syncTimer() {
+    if (timerAnchorMs === null || game.state !== 'playing') return
+    const t = Math.min(999, Math.floor((timerBaseMs + Date.now() - timerAnchorMs) / 1000))
+    if (t !== game.timer) {
+      game.timer = t
+      ui.updateHUD()
+    }
+  }
+
   function startTimer() {
-    if (timerInterval) return
-    timerInterval = setInterval(() => {
-      if (game.state === 'playing') {
-        game.timer = Math.min(999, game.timer + 1)
-        ui.updateHUD()
-      }
-    }, 1000)
+    if (timerAnchorMs !== null) return
+    timerAnchorMs = Date.now()
+    if (!timerInterval) timerInterval = setInterval(syncTimer, 250)
   }
 
   function stopTimer() {
+    if (timerAnchorMs !== null) {
+      timerBaseMs += Date.now() - timerAnchorMs
+      timerAnchorMs = null
+    }
     if (timerInterval) {
       clearInterval(timerInterval)
       timerInterval = null
     }
+  }
+
+  function resetTimerClock() {
+    stopTimer()
+    timerBaseMs = 0
   }
 
   // 引擎状态变化 → 统一管理计时器（替代原先的 monkey-patch）
@@ -62,22 +81,27 @@
   // ---------- 新游戏 ----------
 
   function startGame(level) {
-    if (level === 'custom' && game.currentCustom) {
+    if (level === 'custom') {
+      // 防御：尚无自定义配置时（理论上不可达）直接忽略，避免 game.init('custom') 抛错
+      if (!game.currentCustom) return
       game.initCustom(game.currentCustom.rows, game.currentCustom.cols, game.currentCustom.mines)
     } else {
       game.init(level)
     }
-    stopTimer()
+    resetTimerClock()
     ui.render()
     ui.prevState = 'ready'
     if (window.electronAPI) window.electronAPI.updateMenuDifficulty(game.currentLevel)
-    setTimeout(fitWindow, 50)
+    requestAnimationFrame(fitWindow)
   }
 
   // ---------- 对话框 ----------
 
   function showDialog(innerHTML, extraClass) {
     clearHeldMoves()
+    // 对局中打开对话框时暂停计时，全部对话框关闭后恢复
+    const shouldResume = game.state === 'playing' && timerAnchorMs !== null
+    if (shouldResume) stopTimer()
     const overlay = document.createElement('div')
     overlay.className = 'dialog-overlay'
     const dialog = document.createElement('div')
@@ -85,7 +109,13 @@
     dialog.innerHTML = innerHTML
     overlay.appendChild(dialog)
     document.body.appendChild(overlay)
-    const close = () => overlay.remove()
+    const close = () => {
+      if (!overlay.parentNode) return
+      overlay.remove()
+      if (shouldResume && !document.querySelector('.dialog-overlay')) startTimer()
+    }
+    // Escape 关闭与按钮关闭走同一条路径，保证计时器状态一致
+    overlay._close = close
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) close()
     })
@@ -140,11 +170,11 @@
 
       close()
       game.initCustom(rows, cols, mines)
-      stopTimer()
+      resetTimerClock()
       ui.render()
       ui.prevState = 'ready'
       if (window.electronAPI) window.electronAPI.updateMenuDifficulty('custom')
-      setTimeout(fitWindow, 50)
+      requestAnimationFrame(fitWindow)
     })
 
     dialog.querySelector('#custom-cancel').addEventListener('click', close)
@@ -168,6 +198,7 @@
       <p>　初级: ${fmtTime(s.bestTime.beginner)}</p>
       <p>　中级: ${fmtTime(s.bestTime.intermediate)}</p>
       <p>　高级: ${fmtTime(s.bestTime.expert)}</p>
+      ${s.bestTime.custom != null ? `<p>　自定义: ${fmtTime(s.bestTime.custom)}</p>` : ''}
       <div class="actions">
         <button class="btn" id="stats-close">关闭</button>
       </div>
@@ -179,7 +210,7 @@
   function showAboutDialog() {
     const { dialog, close } = showDialog(`
       <h2>关于扫雷</h2>
-      <p>经典扫雷游戏 v1.2.0</p>
+      <p id="about-version">经典扫雷游戏</p>
       <p class="mt small">
         Electron 跨平台桌面应用<br>
         纯 JavaScript 实现<br>
@@ -189,6 +220,14 @@
         <button class="btn" id="about-close">关闭</button>
       </div>
     `, 'narrow')
+
+    // 版本号从 package.json 单一来源读取（经主进程 IPC），避免双处维护漂移
+    const versionEl = dialog.querySelector('#about-version')
+    if (window.electronAPI && window.electronAPI.getAppVersion) {
+      window.electronAPI.getAppVersion().then((v) => {
+        if (versionEl && v) versionEl.textContent = '经典扫雷游戏 v' + v
+      }).catch(() => {})
+    }
 
     dialog.querySelector('#about-close').addEventListener('click', close)
   }
@@ -322,7 +361,7 @@
 
     if (e.key === 'Escape') {
       const overlay = document.querySelector('.dialog-overlay')
-      if (overlay) overlay.remove()
+      if (overlay && overlay._close) overlay._close()
       return
     }
 
@@ -346,6 +385,9 @@
       }
       return
     }
+
+    // 非方向动作忽略系统键重复：避免按住 F 连续翻旗、按住 F2 连续重开
+    if (e.repeat) return
 
     switch (action) {
       case 'activate': {
@@ -389,7 +431,8 @@
 
   function resumeGame() {
     document.getElementById('pause-overlay').classList.remove('visible')
-    if (game.state === 'playing') startTimer()
+    // 对话框还开着时不恢复计时，交由对话框关闭逻辑接管
+    if (game.state === 'playing' && !document.querySelector('.dialog-overlay')) startTimer()
   }
 
   window.addEventListener('blur', pauseGame)
@@ -450,5 +493,5 @@
   }
 
   ui.render()
-  setTimeout(fitWindow, 100)
+  requestAnimationFrame(fitWindow)
 })()

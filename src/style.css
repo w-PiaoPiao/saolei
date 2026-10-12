@@ -262,7 +262,8 @@ body {
 #pause-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0,0,0,0.55);
+  /* 不透明遮盖：暂停期间棋盘数字不可辨认，防止借暂停研究局面 */
+  background: var(--bg-page);
   display: flex;
   align-items: center;
   justify-content: center;

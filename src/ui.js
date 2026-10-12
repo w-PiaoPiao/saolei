@@ -47,14 +47,24 @@ class UIRenderer {
       this.onMouseUp(e)
     })
     this.container.addEventListener('click', (e) => {
+      // 和弦手势的收尾 click 在容器层统一消费：即使松开位置不在格子上，
+      // 也不会吞掉下一次正常点击（suppressClick 必然在此被清掉）
+      if (this.suppressClick) {
+        this.suppressClick = false
+        return
+      }
       const cell = e.target.closest('.cell')
       if (!cell) return
       this.onLeftClick(Number(cell.dataset.row), Number(cell.dataset.col))
     })
     this.container.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      if (this.suppressClick) {
+        this.suppressClick = false
+        return
+      }
       const cell = e.target.closest('.cell')
       if (!cell) return
-      e.preventDefault()
       this.onRightClick(Number(cell.dataset.row), Number(cell.dataset.col))
     })
     this.container.addEventListener('dblclick', (e) => {
@@ -66,7 +76,9 @@ class UIRenderer {
 
   onStateChange(newState) {
     if (this.prevState === newState) return
-    if (newState === 'playing' && this.prevState === 'ready') {
+    // ready → 任意终态/进行态都计入总局数：
+    // 覆盖「一次操作直接 ready→won」的路径，避免胜率统计出现 >100% 的口径洞
+    if (newState !== 'ready' && this.prevState === 'ready') {
       this.stats.onGameStart(this.engine.currentLevel)
     }
     if (newState === 'won') {
@@ -209,10 +221,6 @@ class UIRenderer {
   // ---------- 操作入口 ----------
 
   onLeftClick(row, col) {
-    if (this.suppressClick) {
-      this.suppressClick = false
-      return
-    }
     const eng = this.engine
     if (eng.state === 'won' || eng.state === 'lost') return
     if (eng.state === 'ready' || eng.state === 'playing') {
@@ -226,10 +234,6 @@ class UIRenderer {
   }
 
   onRightClick(row, col) {
-    if (this.suppressClick) {
-      this.suppressClick = false
-      return
-    }
     const eng = this.engine
     if (eng.state === 'won' || eng.state === 'lost') return
     if (eng.state === 'ready' || eng.state === 'playing') {
@@ -244,7 +248,8 @@ class UIRenderer {
   onMouseDown(e) {
     const cell = e.target.closest('.cell')
     if (!cell) return
-    if (e.buttons === 3) {
+    // 和弦触发：左右键同时按住（buttons===3）或中键单独按下
+    if (e.buttons === 3 || e.button === 1) {
       e.preventDefault()
       this.chordPending = true
       this.chordTarget = {
