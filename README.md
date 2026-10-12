@@ -1,52 +1,51 @@
-# 扫雷 / Minesweeper 🎯
+# 扫雷 🎯
 
 **中文** | [English](README.en.md)
 
-经典 Windows XP 风格扫雷游戏 · Classic Windows XP-style Minesweeper
+经典 Windows XP 风格扫雷游戏。
 
-Electron 跨平台桌面应用 / Cross-platform desktop app for macOS · Windows · Linux
+基于 Electron 的跨平台桌面应用，支持 macOS · Windows · Linux。
 
 ---
 
-## 功能 / Features
+## 功能
 
-| 中文 | English |
+| 功能 | 说明 |
 |---|---|
-| 三档难度：初级 9×9/10雷、中级 16×16/40雷、高级 16×30/99雷 | 3 preset difficulties: Beginner, Intermediate, Expert |
-| 自定义模式：自由设定行/列/雷数（最大 50×50） | Custom mode: configurable rows, cols & mines (up to 50×50) |
-| 超大棋盘自动缩放格子尺寸（可读性下限 + 滚动兜底），窗口只放大不缩小 | Auto cell scaling with a readable floor and scroll fallback; window only grows |
-| 无猜生成在后台线程（worker）执行，首点不冻结界面并显示「生成中」 | No-guess generation runs in a worker thread; first click never freezes the UI |
-| 原生菜单栏（F2 新游戏） | Native menu bar (F2 for new game) |
-| 单实例运行：重复启动会聚焦已有窗口，避免双开互相覆盖统计 | Single instance: relaunching focuses the existing window |
-| 键盘全操作 + 可自定义快捷键 | Full keyboard control with rebindable keys |
-| 和弦操作：双击、中键或左右键同时按下 | Chord: double-click, middle-click, or left+right click on numbers |
-| 首次点击安全：3×3 无雷 + 空白格大面积展开 | Safe first click: 3×3 safe zone + guaranteed zero-cell |
-| Web Audio API 合成 6 种音效（零外部文件） | 6 Web Audio API sound effects (no external files) |
-| 游戏统计：总局、胜率、连胜、最快时间 | Game stats: games, win rate, streaks, best times |
-| 无猜模式：生成保证可纯逻辑推理通关的雷局；预算内未找到可解局时界面明示 | No-guess mode: boards always solvable by pure logic; HUD warns if generation falls back |
-| 3BV 效率统计：各难度最佳 3BV/s + 最近 20 局效率曲线 | 3BV efficiency: best 3BV/s per level + last-20-games chart |
-| 6 套主题切换（偏好持久化） | 6 themes (persistent preference) |
-| 和弦失败 shake 动画、左右键邻居格凹陷效果 | Shake animation on chord fail, press-down neighbor highlight |
-| 对局保护与终局反馈：重开需确认、失败错旗打叉、破纪录横幅 | Restart confirm, wrong-flag cross on loss, new-record banner |
-| 主题默认跟随系统深浅色（未手动选过主题时） | Follows system light/dark until a theme is picked manually |
-| 内置单元测试（node:test，`npm test`） | Built-in unit tests (node:test, `npm test`) |
+| 三档难度 | 初级 9×9/10 雷、中级 16×16/40 雷、高级 16×30/99 雷 |
+| 自定义模式 | 自由设定行/列/雷数，最大 50×50 |
+| 超大棋盘 | 自动缩放格子尺寸（带可读性下限，放不下时滚动浏览）；窗口只放大不缩小 |
+| 无猜模式 | 生成保证可纯逻辑推理通关的雷局；预算内未找到可解局时降级，并在界面明示 |
+| 无猜生成不阻塞 | 生成在后台线程执行，首点不冻结界面并显示「生成中」 |
+| 原生菜单栏 | F2 新游戏 |
+| 单实例运行 | 重复启动会聚焦已有窗口，避免双开互相覆盖统计 |
+| 键盘全操作 | 所有操作可用键盘完成，快捷键可自定义 |
+| 和弦操作 | 双击、中键或左右键同时按下 |
+| 首次点击安全 | 3×3 无雷 + 空白格大面积展开 |
+| 音效 | Web Audio API 合成 6 种音效（零外部文件） |
+| 游戏统计 | 总局、胜率、连胜、最快时间 |
+| 3BV 效率统计 | 各难度最佳 3BV/s + 最近 20 局效率曲线 |
+| 主题 | 6 套主题切换（偏好持久化），未手动选过时跟随系统深浅色 |
+| 动画与反馈 | 和弦失败 shake 动画、左右键邻居格凹陷效果、破纪录横幅 |
+| 对局保护 | 重开需确认、失败错旗打叉 |
+| 单元测试 | 内置 node:test 测试，运行 `npm test` |
 
 ---
 
-## 快速开始 / Quick Start
+## 快速开始
 
 ```bash
 npm install
 npm start
 ```
 
-## 测试 / Tests
+## 测试
 
 ```bash
 npm test
 ```
 
-## 打包 / Build
+## 打包
 
 ```bash
 # macOS
@@ -59,25 +58,25 @@ npm run dist:win
 npm run dist:linux
 ```
 
-## 下载 / Download
+## 下载
 
 发布页：[github.com/w-PiaoPiao/saolei/releases](https://github.com/w-PiaoPiao/saolei/releases)
 
-| 平台 / Platform | 格式 | 说明 |
+| 平台 | 格式 | 说明 |
 |---|---|---|
-| macOS (Apple Silicon) | .dmg | 安装包 |
-| Windows (x64) | .exe | 便携版，双击即运行 |
-| Linux (arm64) | .AppImage | chmod +x 后运行 |
+| macOS（Apple Silicon） | .dmg | 安装包 |
+| Windows（x64） | .exe | 便携版，双击即运行 |
+| Linux（arm64） | .AppImage | `chmod +x` 后运行 |
 
-## 技术栈 / Tech Stack
+## 技术栈
 
-Electron + Vanilla JavaScript + CSS3 + node:test (no framework dependencies)
+Electron + 原生 JavaScript + CSS3 + node:test（无框架依赖）
 
-## 安卓掌机版（攻氪 KPA）/ Android (Konkr KPA)
+## 安卓掌机版（攻氪 KPA）
 
 面向 960×640 横屏安卓掌机（攻氪 KPA：十字键 + ABXY）的原生移植版，代码在 `android/` 目录：
 
-- **原生 Kotlin**：自定义 View (Canvas) 绘制，沉浸全屏，无浏览器层
+- **原生 Kotlin**：自定义 View（Canvas）绘制，沉浸全屏，无浏览器层
 - **引擎移植**：`android/core` 纯 JVM 模块逐方法移植桌面版 `game.js` / `movement.js` / `keybindings.js` / `stats.js`，JUnit 单元测试覆盖
 - **手柄操作**：方向键移动（斜向 + 长按重复）、B=翻开/和弦、A=标雷（旗→问号→取消）、Start=新游戏、Select=菜单
 - **键位自定义**：菜单 → 键位设置，任意键可重绑（含按键测试屏），持久化保存
@@ -115,7 +114,7 @@ KPA 需先在系统设置中开启「开发者选项 → USB 调试」。调试�
 
 触摸（可选）：点按=翻开/和弦，长按=标雷，点表情=新游戏；超大棋盘可拖动浏览。**全部对话框都支持触摸**——菜单项点按执行，自定义雷区点行选中、点 ◀▶ 调整数值、点「确定/取消」提交，统计/关于点按关闭，效率曲线左右箭头切换难度，键位设置点行进入录制；点对话框外空白等价 Back 关闭。
 
-## CI / 自动化发布
+## CI 与自动化发布
 
 - **桌面版**：推 `desktop-v*` 标签（如 `desktop-v1.3.0`）触发 [GitHub Actions](.github/workflows/build.yml)：先跑单元测试，再构建 macOS / Windows / Linux 三平台安装包并自动发布到 GitHub Releases。
 - **安卓版**：推 `v*` 标签（如 `v1.2.1`）触发 [android.yml](.github/workflows/android.yml)：跑单测、构建 Debug APK；若仓库配置了签名 secrets（`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`），还会构建**签名正式版**并自动发布到 GitHub Releases。发布版的版本号由标签注入（`v1.2.3` → `versionName=1.2.3`、`versionCode=10203`），游戏内「关于」页显示运行时版本号，不再硬编码。
