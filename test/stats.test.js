@@ -123,4 +123,69 @@ test('reset 清空所有统计', () => {
   assert.equal(s.totalGames, 0)
   assert.equal(s.gamesWon, 0)
   assert.equal(s.bestTime.beginner, null)
+  assert.equal(s.bestBbbvPerSec.beginner, null)
+  assert.equal(stats.data.history.length, 0)
+})
+
+test('胜利记录 3BV 效率并写入历史', () => {
+  const { stats } = make()
+  stats.onGameStart('beginner')
+  stats.onGameWin(30, 45) // 45 3BV / 30s = 1.5 3BV/s
+  const s = stats.getSummary()
+  assert.equal(s.bestBbbvPerSec.beginner, 1.5)
+  const h = stats.getHistory('beginner')
+  assert.equal(h.length, 1)
+  assert.equal(h[0].bbbv, 45)
+  assert.equal(h[0].time, 30)
+  assert.ok(h[0].ts > 0)
+})
+
+test('最佳效率只在更快的一局时刷新', () => {
+  const { stats } = make()
+  stats.onGameStart('beginner')
+  stats.onGameWin(30, 45) // 1.5
+  stats.onGameStart('beginner')
+  stats.onGameWin(60, 45) // 0.75，不刷新
+  assert.equal(stats.getSummary().bestBbbvPerSec.beginner, 1.5)
+  stats.onGameStart('beginner')
+  stats.onGameWin(20, 50) // 2.5，刷新
+  assert.equal(stats.getSummary().bestBbbvPerSec.beginner, 2.5)
+})
+
+test('历史按难度过滤，总数受 HISTORY_MAX 上限约束', () => {
+  const { stats } = make()
+  for (let i = 0; i < 60; i++) {
+    stats.onGameStart('beginner')
+    stats.onGameWin(30 + i, 40)
+  }
+  stats.onGameStart('expert')
+  stats.onGameWin(100, 120)
+  assert.equal(stats.getHistory('beginner').length, 20) // 默认取最近 20 局
+  assert.equal(stats.getHistory('expert').length, 1)
+  assert.equal(stats.data.history.length, CONFIG.HISTORY_MAX)
+  // 截断后保留的是最新的记录
+  assert.equal(stats.data.history[stats.data.history.length - 1].level, 'expert')
+})
+
+test('未带 3BV 的胜利不写历史（兼容旧调用）', () => {
+  const { stats } = make()
+  stats.onGameStart('beginner')
+  stats.onGameWin(30)
+  assert.equal(stats.data.history.length, 0)
+  assert.equal(stats.getSummary().bestBbbvPerSec.beginner, null)
+})
+
+test('旧存档缺 3BV 相关键时自动补齐', () => {
+  const storage = fakeStorage()
+  storage.setItem(
+    CONFIG.STORAGE_KEYS.stats,
+    JSON.stringify({ totalGames: 5, gamesWon: 3, bestTime: { beginner: 20 } })
+  )
+  const stats = new StatsManager(storage, CONFIG)
+  const s = stats.getSummary()
+  assert.equal(s.totalGames, 5)
+  assert.equal(s.bestTime.beginner, 20)
+  assert.equal(s.bestTime.expert, null)
+  assert.equal(s.bestBbbvPerSec.expert, null)
+  assert.deepEqual(stats.data.history, [])
 })

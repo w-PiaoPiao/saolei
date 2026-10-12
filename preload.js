@@ -9,5 +9,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   updateMenuDifficulty: (level) => ipcRenderer.send('update-menu-difficulty', level),
   updateMenuTheme: (theme) => ipcRenderer.send('update-menu-theme', theme),
-  updateMenuMute: (muted) => ipcRenderer.send('update-menu-mute', muted)
+  updateMenuMute: (muted) => ipcRenderer.send('update-menu-mute', muted),
+  updateMenuNoGuess: (enabled) => ipcRenderer.send('update-menu-no-guess', enabled)
 })

@@ -151,3 +151,22 @@ test('终局后引擎拒绝继续操作', () => {
   g.reveal(8, 8)
   assert.equal(g.revealedCount, revealedBefore)
 })
+
+test('踩雷终局：非雷格上的旗标记为错误旗', () => {
+  const g = setupEngine('beginner', [[0, 0]])
+  g.toggleFlag(5, 5) // 非雷格插旗
+  g.reveal(0, 0) // 踩雷判负
+  assert.equal(g.state, 'lost')
+  assert.equal(g.board[5][5].wrongFlag, true)
+  assert.equal(g.board[5][5].flagged, true) // 保留旗状态，UI 叠加红叉
+  assert.equal(g.board[0][0].wrongFlag, false)
+})
+
+test('新局重建棋盘清除错误旗标记', () => {
+  const g = setupEngine('beginner', [[0, 0]])
+  g.toggleFlag(5, 5)
+  g.reveal(0, 0)
+  g.init('beginner')
+  assert.equal(g.board[5][5].wrongFlag, false)
+  assert.equal(g.board[0][0].flagged, false)
+})

@@ -122,8 +122,39 @@
     return { overlay, dialog, close }
   }
 
-  function showCustomDialog() {
+  /** 通用确认框：点「确定」才执行 onConfirm（取消或点遮罩都不执行） */
+  function showConfirmDialog(title, message, onConfirm) {
     const { dialog, close } = showDialog(`
+      <h2>${title}</h2>
+      <p class="mt">${message}</p>
+      <div class="actions">
+        <button class="btn" id="confirm-ok">确定</button>
+        <button class="btn" id="confirm-cancel">取消</button>
+      </div>
+    `, 'narrow')
+
+    dialog.querySelector('#confirm-ok').addEventListener('click', () => {
+      close()
+      onConfirm()
+    })
+    dialog.querySelector('#confirm-cancel').addEventListener('click', close)
+    // 默认聚焦「取消」：回车不会误重开
+    setTimeout(() => dialog.querySelector('#confirm-cancel').focus(), 50)
+  }
+
+  /**
+   * 重开保护：对局进行中（已有进展）先确认再执行，避免 F2 / 难度按钮误触丢局；
+   * 未开局或已终局时直接执行，不打扰。
+   */
+  function requestRestart(action) {
+    if (game.state !== 'playing') {
+      action()
+      return
+    }
+    showConfirmDialog('重新开始？', '当前对局将丢失', action)
+  }
+
+  function showCustomDialog() {    const { dialog, close } = showDialog(`
       <h2>自定义雷区</h2>
       <div class="error" id="custom-error"></div>
       <div class="row">
@@ -185,6 +216,7 @@
     const s = stats.getSummary()
     const fmt = (n) => String(n).padStart(3, '0')
     const fmtTime = (t) => (t === null ? '--:--' : Math.floor(t / 60) + ':' + fmt(t % 60))
+    const fmtRate = (r) => (r == null ? '--' : r.toFixed(2))
 
     const { dialog, close } = showDialog(`
       <h2>游戏统计</h2>
@@ -199,12 +231,117 @@
       <p>　中级: ${fmtTime(s.bestTime.intermediate)}</p>
       <p>　高级: ${fmtTime(s.bestTime.expert)}</p>
       ${s.bestTime.custom != null ? `<p>　自定义: ${fmtTime(s.bestTime.custom)}</p>` : ''}
+      <p class="mt">最佳效率（3BV/s）:</p>
+      <p>　初级: ${fmtRate(s.bestBbbvPerSec.beginner)}</p>
+      <p>　中级: ${fmtRate(s.bestBbbvPerSec.intermediate)}</p>
+      <p>　高级: ${fmtRate(s.bestBbbvPerSec.expert)}</p>
+      ${s.bestBbbvPerSec.custom != null ? `<p>　自定义: ${fmtRate(s.bestBbbvPerSec.custom)}</p>` : ''}
       <div class="actions">
         <button class="btn" id="stats-close">关闭</button>
       </div>
     `, 'wide')
 
     dialog.querySelector('#stats-close').addEventListener('click', close)
+  }
+
+  // ---------- 效率曲线（3BV/s） ----------
+
+  /** 用 SVG 画最近 N 局 3BV/s 折线（无依赖；currentColor 跟随主题文字色） */
+  function buildChartSvg(entries) {
+    const W = 520
+    const H = 190
+    const padL = 44
+    const padR = 14
+    const padT = 14
+    const padB = 26
+    if (entries.length === 0) {
+      return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">
+        <text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="currentColor" opacity="0.5" font-size="13">暂无数据</text>
+      </svg>`
+    }
+    const rates = entries.map((e) => e.bbbv / e.time)
+    const yMax = Math.max(1, Math.ceil(Math.max(...rates) * 1.15 * 10) / 10)
+    const innerW = W - padL - padR
+    const innerH = H - padT - padB
+    const x = (i) => padL + (entries.length === 1 ? innerW / 2 : (innerW * i) / (entries.length - 1))
+    const y = (v) => padT + innerH * (1 - v / yMax)
+    const grid = [0, 0.5, 1]
+      .map((f) => {
+        const v = yMax * f
+        return (
+          `<line x1="${padL}" y1="${y(v).toFixed(1)}" x2="${W - padR}" y2="${y(v).toFixed(1)}" ` +
+          `stroke="currentColor" stroke-opacity="0.18"/>` +
+          `<text x="${padL - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="10" ` +
+          `fill="currentColor" opacity="0.7">${v.toFixed(1)}</text>`
+        )
+      })
+      .join('')
+    const avg = rates.reduce((a, b) => a + b, 0) / rates.length
+    const points = rates.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
+    const dots = rates
+      .map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.6" fill="currentColor"/>`)
+      .join('')
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">
+      ${grid}
+      <line x1="${padL}" y1="${y(avg).toFixed(1)}" x2="${W - padR}" y2="${y(avg).toFixed(1)}"
+        stroke="currentColor" stroke-opacity="0.45" stroke-dasharray="4 3"/>
+      <polyline points="${points}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      ${dots}
+      <text x="${W - padR}" y="${H - 6}" text-anchor="end" font-size="10" fill="currentColor" opacity="0.6">
+        最近 ${entries.length} 局（右为新）
+      </text>
+    </svg>`
+  }
+
+  function showHistoryDialog() {
+    const LEVEL_OPTIONS = [
+      ['beginner', '初级'],
+      ['intermediate', '中级'],
+      ['expert', '高级'],
+      ['custom', '自定义']
+    ]
+    let level = game.currentLevel
+
+    const { dialog, close } = showDialog(`
+      <h2>效率曲线（3BV/s）</h2>
+      <div class="row">
+        <label>难度:</label>
+        <select id="hist-level">
+          ${LEVEL_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+        </select>
+      </div>
+      <div id="hist-chart"></div>
+      <div id="hist-meta"></div>
+      <div class="actions">
+        <button class="btn" id="hist-close">关闭</button>
+      </div>
+    `, 'wide')
+
+    const select = dialog.querySelector('#hist-level')
+    const chart = dialog.querySelector('#hist-chart')
+    const meta = dialog.querySelector('#hist-meta')
+    select.value = level
+
+    const render = () => {
+      const entries = stats.getHistory(level, 20)
+      chart.innerHTML = buildChartSvg(entries)
+      if (entries.length === 0) {
+        meta.textContent = '该难度暂无胜局记录'
+      } else {
+        const rates = entries.map((e) => e.bbbv / e.time)
+        const avg = rates.reduce((a, b) => a + b, 0) / rates.length
+        meta.textContent =
+          `样本 ${entries.length} 局 · 平均 ${avg.toFixed(2)} · 最佳 ${Math.max(...rates).toFixed(2)} 3BV/s`
+      }
+    }
+
+    render()
+    select.addEventListener('change', () => {
+      level = select.value
+      render()
+    })
+    dialog.querySelector('#hist-close').addEventListener('click', close)
+    setTimeout(() => select.focus(), 50)
   }
 
   function showAboutDialog() {
@@ -277,13 +414,13 @@
   document.querySelectorAll('.diff-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       ui.hideCursor()
-      startGame(btn.dataset.level)
+      requestRestart(() => startGame(btn.dataset.level))
     })
   })
 
   document.getElementById('face-button').addEventListener('click', () => {
     ui.hideCursor()
-    startGame(game.currentLevel)
+    requestRestart(() => startGame(game.currentLevel))
   })
 
   // ---------- 键盘 ----------
@@ -403,7 +540,7 @@
         ui.onRightClick(row, col)
         break
       case 'newGame':
-        startGame(game.currentLevel)
+        requestRestart(() => startGame(game.currentLevel))
         break
     }
   })
@@ -446,16 +583,24 @@
     if (window.electronAPI) window.electronAPI.updateMenuMute(muted)
   }
 
+  // ---------- 无猜模式 ----------
+
+  function setNoGuess(enabled) {
+    game.noGuess = enabled
+    localStorage.setItem(CONFIG.STORAGE_KEYS.noGuess, String(enabled))
+    if (window.electronAPI) window.electronAPI.updateMenuNoGuess(enabled)
+  }
+
   // ---------- 原生菜单动作 ----------
 
   if (window.electronAPI) {
     window.electronAPI.onMenuAction((data) => {
       switch (data.action) {
         case 'new-game':
-          startGame(game.currentLevel)
+          requestRestart(() => startGame(game.currentLevel))
           break
         case 'difficulty':
-          startGame(data.level)
+          requestRestart(() => startGame(data.level))
           break
         case 'custom':
           showCustomDialog()
@@ -466,8 +611,14 @@
         case 'toggle-mute':
           setMute(data.value)
           break
+        case 'toggle-no-guess':
+          setNoGuess(data.value)
+          break
         case 'stats':
           showStatsDialog()
+          break
+        case 'history':
+          showHistoryDialog()
           break
         case 'about':
           showAboutDialog()
@@ -481,16 +632,30 @@
 
   // ---------- 初始化 ----------
 
-  const savedTheme = localStorage.getItem(CONFIG.STORAGE_KEYS.theme)
-  if (savedTheme) {
-    ui.setTheme(savedTheme)
-    if (window.electronAPI) window.electronAPI.updateMenuTheme(savedTheme)
+  // 主题：用户选过就用选过的；没选过则跟随系统深浅色且不落盘，保持继续跟随
+  const systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)')
+
+  function applyTheme(value, persist) {
+    ui.setTheme(value, persist)
+    if (window.electronAPI) window.electronAPI.updateMenuTheme(value)
   }
+
+  const savedTheme = localStorage.getItem(CONFIG.STORAGE_KEYS.theme)
+  applyTheme(savedTheme || (systemThemeQuery.matches ? 'dark' : 'light'), savedTheme !== null)
+
+  systemThemeQuery.addEventListener('change', () => {
+    if (localStorage.getItem(CONFIG.STORAGE_KEYS.theme) === null) {
+      applyTheme(systemThemeQuery.matches ? 'dark' : 'light', false)
+    }
+  })
 
   const savedMuted = localStorage.getItem(CONFIG.STORAGE_KEYS.muted)
   if (savedMuted !== null) {
     setMute(savedMuted === 'true')
   }
+
+  // 无猜模式：默认关闭；开启后布雷会校验可纯逻辑通关（同步引擎与菜单勾选状态）
+  setNoGuess(localStorage.getItem(CONFIG.STORAGE_KEYS.noGuess) === 'true')
 
   ui.render()
   requestAnimationFrame(fitWindow)

@@ -29,8 +29,19 @@
       theme: 'minesweeper_theme',
       muted: 'minesweeper_muted',
       stats: 'minesweeper_stats',
-      bindings: 'minesweeper_bindings'
+      bindings: 'minesweeper_bindings',
+      noGuess: 'minesweeper_noguess'
     },
+
+    // 无猜模式：布雷后校验可纯逻辑通关，不通过则重新生成
+    // （实测高级局单次可解率约 2.5%，600 次尝试内几乎必成，最坏耗时受预算约束）
+    NO_GUESS: {
+      maxAttempts: 600,
+      budgetMs: 500
+    },
+
+    // 历史战绩（效率曲线用）：最多保留最近多少局胜利
+    HISTORY_MAX: 50,
 
     CELL_SIZE: {
       min: 12,

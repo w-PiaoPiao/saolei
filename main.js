@@ -4,6 +4,7 @@ const { LEVELS, THEMES, WINDOW } = require('./src/config.js')
 
 let mainWindow = null
 let muteMenuItem = null
+let noGuessMenuItem = null
 // 菜单项引用：创建菜单时按固定结构抓取，更新状态不再依赖中文 label 匹配
 let diffRadioItems = []
 let themeRadioItems = []
@@ -26,6 +27,12 @@ function createMenu() {
           type: 'checkbox',
           checked: false,
           click: (item) => sendToRenderer('toggle-mute', { value: item.checked })
+        },
+        {
+          label: '无猜模式',
+          type: 'checkbox',
+          checked: false,
+          click: (item) => sendToRenderer('toggle-no-guess', { value: item.checked })
         },
         { label: '键盘快捷键...', click: () => sendToRenderer('keybindings') },
         { type: 'separator' },
@@ -61,6 +68,7 @@ function createMenu() {
       label: '帮助',
       submenu: [
         { label: '游戏统计', click: () => sendToRenderer('stats') },
+        { label: '效率曲线', click: () => sendToRenderer('history') },
         { type: 'separator' },
         { label: '关于扫雷', click: () => sendToRenderer('about') }
       ]
@@ -70,6 +78,7 @@ function createMenu() {
   const menu = Menu.buildFromTemplate(template)
   // 菜单结构固定：0=游戏 1=难度 2=主题 3=帮助
   muteMenuItem = menu.items[0].submenu.items.find((m) => m.label === '静音')
+  noGuessMenuItem = menu.items[0].submenu.items.find((m) => m.label === '无猜模式')
   diffRadioItems = menu.items[1].submenu.items.filter((m) => m.type === 'radio')
   themeRadioItems = menu.items[2].submenu.items.filter((m) => m.type === 'radio')
   Menu.setApplicationMenu(menu)
@@ -90,6 +99,10 @@ function updateMenuTheme(theme) {
 
 function updateMenuMute(muted) {
   if (muteMenuItem) muteMenuItem.checked = muted
+}
+
+function updateMenuNoGuess(enabled) {
+  if (noGuessMenuItem) noGuessMenuItem.checked = enabled
 }
 
 function createWindow() {
@@ -133,6 +146,7 @@ ipcMain.on('fit-window', (event, width, height) => {
 ipcMain.on('update-menu-difficulty', (_, level) => updateMenuDifficulty(level))
 ipcMain.on('update-menu-theme', (_, theme) => updateMenuTheme(theme))
 ipcMain.on('update-menu-mute', (_, muted) => updateMenuMute(muted))
+ipcMain.on('update-menu-no-guess', (_, enabled) => updateMenuNoGuess(enabled))
 
 // 渲染进程读取应用版本（package.json 单一来源）
 ipcMain.handle('app-version', () => app.getVersion())

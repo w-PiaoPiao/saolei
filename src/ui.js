@@ -82,14 +82,32 @@ class UIRenderer {
       this.stats.onGameStart(this.engine.currentLevel)
     }
     if (newState === 'won') {
+      // 破纪录判断必须在 onGameWin 刷新 bestTime 之前
+      const prevBest = this.stats.bestTimeOf(this.stats.lastLevel)
+      const isRecord = prevBest === null || this.engine.timer < prevBest
       this.engine.autoFlagRemainingMines()
       this.engine.revealAllSafe()
-      this.stats.onGameWin(this.engine.timer)
+      this.stats.onGameWin(this.engine.timer, this.engine.bbbv)
+      if (isRecord) this.announceRecord()
     }
     if (newState === 'lost') {
       this.stats.onGameLose(this.engine.timer)
     }
     this.prevState = newState
+  }
+
+  /** 胜利破纪录横幅（首次通关也算）：2.2s 淡出动画结束后自动移除 */
+  announceRecord() {
+    const cfg = CONFIG.LEVELS[this.engine.currentLevel]
+    const label = cfg ? cfg.label : '自定义'
+    const t = this.engine.timer
+    const time = Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0')
+    const el = document.createElement('div')
+    el.className = 'record-banner'
+    el.setAttribute('role', 'status')
+    el.textContent = `新纪录！${label} ${time}`
+    document.body.appendChild(el)
+    el.addEventListener('animationend', () => el.remove())
   }
 
   // ---------- 渲染 ----------
@@ -170,6 +188,10 @@ class UIRenderer {
         classes.push('flagged')
         text = '🚩'
         label = '已插旗'
+        if (data.wrongFlag) {
+          classes.push('wrong-flag')
+          label = '错标：此处没有雷'
+        }
       } else if (data.questioned) {
         classes.push('questioned')
         text = '❓'
@@ -341,9 +363,13 @@ class UIRenderer {
 
   // ---------- 主题 / HUD ----------
 
-  setTheme(theme) {
+  /**
+   * @param {boolean} persist false 时不写偏好：用于"用户未选过主题"时的系统深浅色跟随，
+   *   这样系统切换深浅色可以继续生效；用户显式选过主题后固定不变。
+   */
+  setTheme(theme, persist = true) {
     document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem(CONFIG.STORAGE_KEYS.theme, theme)
+    if (persist) localStorage.setItem(CONFIG.STORAGE_KEYS.theme, theme)
   }
 
   setFace(state) {
