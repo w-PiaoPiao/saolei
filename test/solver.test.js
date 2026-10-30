@@ -162,3 +162,23 @@ test('布雷后 bbbv 自动计算且为新局重置', () => {
   assert.ok(g.bbbv > 0)
   assert.equal(typeof first, 'number')
 })
+
+// ---------- 第二轮修复回归（M2：求解器不修改棋盘 / 语义保持） ----------
+
+test('求解器不修改传入棋盘（生成器 scratch 复用前提）', () => {
+  const g = boardOf(9, 9, [[0, 0], [3, 4]])
+  const snapshot = g.board.map((row) => row.map((cell) => ({ ...cell })))
+  Solver.solve(g.board, 9, 9, 2, 4, 4)
+  assert.deepEqual(g.board, snapshot)
+})
+
+test('求解器：1×1/0 雷退化棋盘判可解', () => {
+  const g = boardOf(1, 1, [])
+  assert.equal(Solver.solve(g.board, 1, 1, 0, 0, 0), true)
+})
+
+test('求解器：全局规则（剩余雷数耗尽）可收尾', () => {
+  // 1×4：雷在 (0,3)，首点 (0,0)。洪泛翻开 0 区后全局规则应能补完剩余格
+  const g = boardOf(1, 4, [[0, 3]])
+  assert.equal(Solver.solve(g.board, 1, 4, 1, 0, 0), true)
+})

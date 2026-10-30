@@ -3,32 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
   <title>扫雷</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="app">
     <div id="header">
-      <div id="mine-counter" class="led">010</div>
+      <div id="mine-counter" class="led" role="img" aria-label="剩余雷数 10">010</div>
       <button id="face-button" aria-label="新游戏">🙂</button>
-      <div id="timer" class="led">000</div>
+      <div id="timer" class="led" role="timer" aria-label="已用时间 00:00">000</div>
       <div class="sep"></div>
       <div id="controls">
-        <button class="diff-btn active" data-level="beginner">初级</button>
-        <button class="diff-btn" data-level="intermediate">中级</button>
-        <button class="diff-btn" data-level="expert">高级</button>
+        <button class="diff-btn active" data-level="beginner" data-i18n="level.beginner" aria-pressed="true">初级</button>
+        <button class="diff-btn" data-level="intermediate" data-i18n="level.intermediate" aria-pressed="false">中级</button>
+        <button class="diff-btn" data-level="expert" data-i18n="level.expert" aria-pressed="false">高级</button>
       </div>
     </div>
-    <div id="noguess-warning" hidden>⚠ 无解保护不可用，本局可能需要猜</div>
-    <div id="generating-hint" hidden>正在生成无猜雷局…</div>
-    <div id="board" role="grid" aria-label="扫雷棋盘"></div>
-    <div id="pause-overlay">
-      <div id="pause-text">⏸ 已暂停</div>
+    <div id="noguess-warning" role="status" aria-live="polite" data-i18n="noguess.warning" hidden>⚠ 无解保护不可用，本局可能需要猜</div>
+    <div id="generating-hint" role="status" aria-live="polite" data-i18n="generating.hint" hidden>正在生成无猜雷局…</div>
+    <div id="board" role="grid" tabindex="0" aria-label="扫雷棋盘" aria-rowcount="9" aria-colcount="9"></div>
+    <div id="pause-overlay" aria-hidden="true">
+      <div id="pause-text" data-i18n="pause.text">⏸ 已暂停</div>
     </div>
   </div>
+  <div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
 
   <script src="config.js"></script>
+  <script src="i18n.js"></script>
+  <script src="ui-helpers.js"></script>
+  <script src="neighbors.js"></script>
   <script src="solver.js"></script>
   <script src="generator.js"></script>
   <script src="game.js"></script>

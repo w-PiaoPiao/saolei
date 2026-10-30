@@ -132,4 +132,47 @@ class SolverTest {
         g.reveal(0, 0)
         assertTrue(g.bbbv > 0)
     }
+    // ---------- v1.3（L20）：补桌面已有用例 + 求解器不变量 ----------
+
+    @Test
+    fun `求解器：子集规则可解出单点规则推不出的差集（移植桌面用例）`() {
+        // 布局（M=雷，. =0）：
+        //   M . M
+        //   1 2 1
+        //   . . .
+        val g = boardOf(3, 4, listOf(0 to 0, 0 to 2))
+        assertEquals(2, g.board[1][1].adjacentMines)
+        // 首点取底部中央 (2,1)：洪泛展开底部；之后仅靠子集规则推出差集
+        assertTrue(Solver.solve(g.board, 3, 4, 2, 2, 1))
+    }
+
+    @Test
+    fun `求解器：不修改棋盘（只读不变量）`() {
+        val g = boardOf(9, 9, listOf(0 to 0, 8 to 8, 4 to 4))
+        val minesBefore = g.board.map { row -> row.map { it.mine } }
+        val adjacentBefore = g.board.map { row -> row.map { it.adjacentMines } }
+        val revealedBefore = g.board.map { row -> row.map { it.revealed } }
+        Solver.solve(g.board, 9, 9, 3, 4, 4)
+        for (r in 0 until 9) {
+            for (c in 0 until 9) {
+                assertEquals(minesBefore[r][c], g.board[r][c].mine)
+                assertEquals(adjacentBefore[r][c], g.board[r][c].adjacentMines)
+                assertEquals(revealedBefore[r][c], g.board[r][c].revealed)
+            }
+        }
+    }
+
+    @Test
+    fun `求解器：参数非法时报错`() {
+        val g = boardOf(9, 9, listOf(0 to 0))
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            Solver.solve(g.board, 0, 9, 1, 0, 0)
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            Solver.solve(g.board, 9, 9, 1, -1, 0)
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            Solver.solve(g.board, 9, 9, 1, 0, 9)
+        }
+    }
 }

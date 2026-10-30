@@ -11,6 +11,9 @@ object KeyCodes {
     const val DPAD_LEFT = 21
     const val DPAD_RIGHT = 22
     const val DPAD_CENTER = 23
+
+    // 以下常量为决议键预留（KPA 掌机外接/未来动作可绑定）；默认键位只用 8 个动作，
+    // KeyNames 保留对应显示名，便于设置界面直接展示录制到的物理键。
     const val BUTTON_A = 96
     const val BUTTON_B = 97
     const val BUTTON_X = 99

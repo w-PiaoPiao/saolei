@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Minesweeper</string>
+
+    <!-- Difficulty -->
+    <string name="level_beginner">Beginner</string>
+    <string name="level_intermediate">Intermediate</string>
+    <string name="level_expert">Expert</string>
+    <string name="level_custom">Custom</string>
+
+    <!-- Themes -->
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_xp_silver">WinXP Silver</string>
+    <string name="theme_vista">Vista Blue</string>
+    <string name="theme_macos">macOS</string>
+    <string name="theme_macos_dark">macOS Dark</string>
+
+    <!-- Actions -->
+    <string name="action_move_up">Move up</string>
+    <string name="action_move_down">Move down</string>
+    <string name="action_move_left">Move left</string>
+    <string name="action_move_right">Move right</string>
+    <string name="action_activate">Reveal / chord</string>
+    <string name="action_flag">Flag</string>
+    <string name="action_new_game">New game</string>
+    <string name="action_menu">Menu</string>
+
+    <!-- HUD -->
+    <string name="hud_no_guess_warning">⚠ No-guess protection unavailable</string>
+    <string name="hud_generating">Generating a no-guess board…</string>
+    <string name="record_banner">New record! %1$s %2$s</string>
+
+    <!-- Menu -->
+    <string name="menu_title">Menu</string>
+    <string name="menu_new_game">New game</string>
+    <string name="menu_difficulty">Difficulty: %1$s %2$d×%3$d/%4$d mines</string>
+    <string name="menu_custom">Custom board…</string>
+    <string name="menu_theme">Theme: %1$s</string>
+    <string name="menu_mute_on">Mute: on</string>
+    <string name="menu_mute_off">Mute: off</string>
+    <string name="menu_no_guess_on">No-guess mode: on</string>
+    <string name="menu_no_guess_off">No-guess mode: off</string>
+    <string name="menu_bindings">Key bindings…</string>
+    <string name="menu_stats">Statistics…</string>
+    <string name="menu_history">Efficiency curve…</string>
+    <string name="menu_about">About…</string>
+    <string name="menu_exit">Exit game</string>
+
+    <!-- Restart / exit confirmation -->
+    <string name="confirm_restart_title">Restart?</string>
+    <string name="confirm_restart_msg">The current game will be lost</string>
+    <string name="confirm_restart_yes">Restart</string>
+    <string name="confirm_exit_title">Exit game?</string>
+    <string name="confirm_exit_msg">The current game will not be saved</string>
+    <string name="confirm_exit_yes">Exit</string>
+    <string name="confirm_cancel">Cancel</string>
+
+    <!-- Bottom bar / pause -->
+    <string name="bottom_hint">%1$s reveal/chord  %2$s flag  %3$s menu</string>
+    <string name="pause_title">Paused</string>
+    <string name="pause_sub">Resumes when you return</string>
+
+    <!-- Custom board -->
+    <string name="custom_title">Custom board</string>
+    <string name="custom_row">Rows</string>
+    <string name="custom_col">Columns</string>
+    <string name="custom_mines">Mines</string>
+    <string name="custom_err_rows">Rows must be an integer from 9 to 50</string>
+    <string name="custom_err_cols">Columns must be an integer from 9 to 50</string>
+    <string name="custom_err_mines">Mines must be an integer from 1 to %1$d</string>
+    <string name="custom_ok">OK</string>
+    <string name="custom_cancel">Cancel</string>
+    <string name="custom_hint">Tap a row to select · tap ◀ ▶ to adjust · or use the D-pad</string>
+
+    <!-- Key bindings -->
+    <string name="bindings_title">Key bindings</string>
+    <string name="bind_reset">Reset to defaults</string>
+    <string name="bind_close">Close</string>
+    <string name="bind_conflict">"%1$s" is already used by "%2$s"</string>
+    <string name="bind_listening">Press a new key…</string>
+    <string name="bind_current_key">Current key: %1$s</string>
+    <string name="bind_help">Select an action and press A/B to record, then press the target key · Back cancels</string>
+
+    <!-- Statistics -->
+    <string name="stats_title">Statistics</string>
+    <string name="stats_total">Games: %1$d</string>
+    <string name="stats_win_lose">Wins: %1$d / Losses: %2$d</string>
+    <string name="stats_win_rate">Win rate: %1$d%%</string>
+    <string name="stats_current_streak">Current streak: %1$d</string>
+    <string name="stats_best_streak">Best streak: %1$d</string>
+    <string name="stats_total_time">Total play time: %1$s</string>
+    <string name="stats_fastest">Fastest times:</string>
+    <string name="stats_best_rate">Best efficiency (3BV/s):</string>
+    <string name="stats_level_line">  %1$s: %2$s</string>
+
+    <!-- Efficiency curve -->
+    <string name="history_title">Efficiency curve (3BV/s)</string>
+    <string name="history_label">◀ %1$s ▶</string>
+    <string name="history_empty">No wins recorded for this difficulty yet</string>
+    <string name="history_summary">%1$d games · avg %2$s · best %3$s 3BV/s</string>
+    <string name="history_hint">◀ ▶ switch difficulty · any key / Back closes</string>
+
+    <!-- About -->
+    <string name="about_title">About Minesweeper</string>
+    <string name="about_line1">Classic Minesweeper</string>
+    <string name="about_version_with_v">Android v%1$s</string>
+    <string name="about_version">Android</string>
+    <string name="about_line3">Engine ported from the desktop version</string>
+    <string name="about_device">Adapted for the Konkr KPA handheld</string>
+    <string name="about_controls">%1$s%2$s%3$s%4$s move · %5$s chord · %6$s flag · %7$s new · %8$s menu</string>
+
+    <!-- Accessibility -->
+    <string name="a11y_game_view">Minesweeper board</string>
+    <string name="a11y_action_activate">Reveal or chord</string>
+    <string name="a11y_action_flag">Flag</string>
+    <string name="a11y_action_new_game">New game</string>
+    <string name="a11y_action_menu">Open menu</string>
+    <string name="a11y_state_ready">Ready to start</string>
+    <string name="a11y_state_playing">Playing, %1$d mines left, %2$s elapsed</string>
+    <string name="a11y_state_won">Won in %1$s</string>
+    <string name="a11y_state_lost">Game over after %1$s</string>
+    <string name="a11y_generating">Generating a no-guess board</string>
+    <string name="a11y_no_guess_fallback">No-guess protection unavailable</string>
+    <string name="a11y_status">Time %1$s, battery %2$s</string>
+</resources>

@@ -6,12 +6,23 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
+// 版本默认值唯一来源：仓库根 VERSION（如 1.3.0 → versionName=1.3.0、versionCode=10300）。
+// CI 发布流程仍可用 -PversionName/-PversionCode 注入（tag 优先于 VERSION）。
+val repoVersion: String? = rootProject.file("../VERSION")
+    .takeIf { it.isFile }
+    ?.readText()
+    ?.trim()
+    ?.takeIf { Regex("""\d+\.\d+\.\d+""").matches(it) }
+val repoVersionParts: List<Int>? = repoVersion?.split('.')?.map { it.toInt() }
+val defaultVersionName: String = repoVersion ?: "1.0.0"
+val defaultVersionCode: Int = repoVersionParts?.let { it[0] * 10_000 + it[1] * 100 + it[2] } ?: 1
+
 android {
     namespace = "com.wpiaopiao.saolei"
     compileSdk = 34
 
-    // 版本号由 CI 发布流程按 tag 注入（v1.2.1 → -PversionName=1.2.1 -PversionCode=10201），
-    // 本地构建回落到默认值；About 页显示运行时 versionName，不再硬编码。
+    // 版本号由 CI 发布流程按 tag 注入（android-v1.2.1 → -PversionName=1.2.1 -PversionCode=10201），
+    // 本地构建回落到仓库根 VERSION；About 页显示运行时 versionName，不再硬编码。
     val injectedVersionName = (project.findProperty("versionName") as String?)?.takeIf { it.isNotBlank() }
     val injectedVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull()
 
@@ -19,8 +30,8 @@ android {
         applicationId = "com.wpiaopiao.saolei"
         minSdk = 26
         targetSdk = 34
-        versionCode = injectedVersionCode ?: 1
-        versionName = injectedVersionName ?: "1.0.0"
+        versionCode = injectedVersionCode ?: defaultVersionCode
+        versionName = injectedVersionName ?: defaultVersionName
     }
 
     // 正式版签名：优先读本机 keystore/keystore.properties（不入库），
@@ -77,4 +88,6 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation(libs.androidx.core.ktx)
+    // app 层纯逻辑（GameText/GameClock/OverlayHitRegistry 等）单元测试
+    testImplementation(libs.junit)
 }

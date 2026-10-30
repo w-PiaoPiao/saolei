@@ -3,12 +3,23 @@ name: Android Build
 on:
   push:
     branches: [main, master]
-    tags: ["v*"]
+    tags:
+      # 安卓版发布标签（历史 v* 语义已冻结，见 README「发布与签名」）
+      - 'android-v*'
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
+    name: Test, lint & debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: android
@@ -20,29 +31,54 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # setup-gradle 默认带 Gradle 用户目录缓存（依赖 + wrapper）
       - uses: gradle/actions/setup-gradle@v3
 
-      - name: 单元测试（core 引擎）
+      - name: Version consistency
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            node scripts/check-version.mjs --expect-prefix android-v
+          else
+            node scripts/check-version.mjs
+          fi
+
+      - name: Unit tests (core engine)
         run: ./gradlew :core:test --console=plain
 
-      - name: 构建 Debug APK
+      - name: Unit tests (app, if any)
+        run: ./gradlew :app:testDebugUnitTest --console=plain
+
+      - name: Lint (debug)
+        run: ./gradlew :app:lintDebug --console=plain
+
+      - name: Build debug APK
         run: ./gradlew :app:assembleDebug --console=plain
 
-      - name: 上传 APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: saolei-android-debug-apk
+          retention-days: 14
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-  # 推 v* 标签时构建签名正式版并发布到 GitHub Releases。
-  # 需要仓库配置 secrets：ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD /
-  # ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD（未配置时本 job 的步骤自动跳过）。
-  # 注：secrets 不能在 job 级 if 中引用，故用 step 级 if 判断。
   release:
+    name: Signed release & GitHub Release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/android-v')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # gh release create/upload 需要写权限
+      contents: write
+    # secrets 不能直接写进 if 条件；统一放到 job 级 env，再用 step 输出做门禁
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     defaults:
       run:
         working-directory: android
@@ -54,40 +90,68 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
       - uses: gradle/actions/setup-gradle@v3
 
-      - name: 构建签名 Release APK
-        # secrets 不能直接进 if，先经 step env 中转再判断
-        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - name: Version consistency
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: node scripts/check-version.mjs --expect-prefix android-v
+
+      - name: Detect signing secrets
+        id: signing
+        shell: bash
+        working-directory: ${{ github.workspace }}
         run: |
-          # 标签 v1.2.3 → versionName=1.2.3、versionCode=10203（About 页读运行时 versionName）
-          NAME="${GITHUB_REF_NAME#v}"
-          if [[ "$NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            IFS=. read -r MAJOR MINOR PATCH <<< "$NAME"
-            ./gradlew :app:assembleRelease \
-              -PversionName="$NAME" -PversionCode="$((MAJOR * 10000 + MINOR * 100 + PATCH))" \
-              --console=plain
+          if [[ -n "${ANDROID_KEYSTORE_BASE64}" && -n "${ANDROID_KEYSTORE_PASSWORD}" && -n "${ANDROID_KEY_ALIAS}" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "已检测到签名 secrets，将构建签名 Release APK。"
           else
-            echo "标签 $GITHUB_REF_NAME 非 vX.Y.Z 形式，沿用默认版本号"
-            ./gradlew :app:assembleRelease --console=plain
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::error::发布标签需要签名 secrets（ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS [/ ANDROID_KEY_PASSWORD]），当前缺失，按失败处理，避免发出无签名或版本错误的包。"
+            exit 1
           fi
 
-      - name: 发布到 GitHub Releases
-        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build signed release APK
+        shell: bash
         run: |
-          APK=app/build/outputs/apk/release/app-release.apk
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$APK" --clobber
+          # 标签 android-v1.2.3 → versionName=1.2.3、versionCode=10203
+          NAME="${GITHUB_REF_NAME#android-v}"
+          if ! [[ "$NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::标签 ${GITHUB_REF_NAME} 不是 android-vX.Y.Z 形式，拒绝发布（避免版本号回退）。"
+            exit 1
+          fi
+          IFS=. read -r MAJOR MINOR PATCH <<< "$NAME"
+          ./gradlew :app:assembleRelease \
+            -PversionName="$NAME" -PversionCode="$((MAJOR * 10000 + MINOR * 100 + PATCH))" \
+            --console=plain
+
+      - name: SHA-256 checksums
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: node scripts/sha256sums.mjs android/app/build/outputs/apk/release --output SHA256SUMS-android.txt
+
+      - name: Generate release notes from CHANGELOG
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: node scripts/release-notes.mjs --output release-notes.md
+
+      - name: Upload to GitHub Release
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" SHA256SUMS-android.txt --clobber
+            gh release edit "$TAG" --notes-file release-notes.md
           else
-            gh release create "$GITHUB_REF_NAME" "$APK" \
-              --title "扫雷 $GITHUB_REF_NAME" \
-              --notes "安卓版正式发布（含签名 APK），由 GitHub Actions 自动构建。"
+            gh release create "$TAG" "$APK" SHA256SUMS-android.txt \
+              --title "扫雷 ${TAG#android-v}（安卓版）" \
+              --notes-file release-notes.md
           fi

@@ -1,4 +1,126 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">扫雷</string>
+
+    <!-- 难度 -->
+    <string name="level_beginner">初级</string>
+    <string name="level_intermediate">中级</string>
+    <string name="level_expert">高级</string>
+    <string name="level_custom">自定义</string>
+
+    <!-- 主题 -->
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+    <string name="theme_xp_silver">WinXP 银灰</string>
+    <string name="theme_vista">Vista 蓝</string>
+    <string name="theme_macos">macOS</string>
+    <string name="theme_macos_dark">macOS 深色</string>
+
+    <!-- 动作（键位设置/底栏/关于） -->
+    <string name="action_move_up">上移</string>
+    <string name="action_move_down">下移</string>
+    <string name="action_move_left">左移</string>
+    <string name="action_move_right">右移</string>
+    <string name="action_activate">翻开/和弦</string>
+    <string name="action_flag">标雷</string>
+    <string name="action_new_game">新游戏</string>
+    <string name="action_menu">菜单</string>
+
+    <!-- HUD -->
+    <string name="hud_no_guess_warning">⚠ 无解保护不可用</string>
+    <string name="hud_generating">正在生成无猜雷局…</string>
+    <string name="record_banner">新纪录！%1$s %2$s</string>
+
+    <!-- 菜单 -->
+    <string name="menu_title">菜单</string>
+    <string name="menu_new_game">新游戏</string>
+    <string name="menu_difficulty">难度：%1$s %2$d×%3$d/%4$d雷</string>
+    <string name="menu_custom">自定义雷区…</string>
+    <string name="menu_theme">主题：%1$s</string>
+    <string name="menu_mute_on">静音：开</string>
+    <string name="menu_mute_off">静音：关</string>
+    <string name="menu_no_guess_on">无猜模式：开</string>
+    <string name="menu_no_guess_off">无猜模式：关</string>
+    <string name="menu_bindings">键位设置…</string>
+    <string name="menu_stats">游戏统计…</string>
+    <string name="menu_history">效率曲线…</string>
+    <string name="menu_about">关于…</string>
+    <string name="menu_exit">退出游戏</string>
+
+    <!-- 重开/退出确认 -->
+    <string name="confirm_restart_title">重新开始？</string>
+    <string name="confirm_restart_msg">当前对局将丢失</string>
+    <string name="confirm_restart_yes">重开</string>
+    <string name="confirm_exit_title">退出游戏？</string>
+    <string name="confirm_exit_msg">当前对局不会保存</string>
+    <string name="confirm_exit_yes">退出</string>
+    <string name="confirm_cancel">取消</string>
+
+    <!-- 底栏 / 暂停 -->
+    <string name="bottom_hint">%1$s翻开/和弦  %2$s标雷  %3$s菜单</string>
+    <string name="pause_title">已暂停</string>
+    <string name="pause_sub">回到游戏后自动继续</string>
+
+    <!-- 自定义雷区 -->
+    <string name="custom_title">自定义雷区</string>
+    <string name="custom_row">行</string>
+    <string name="custom_col">列</string>
+    <string name="custom_mines">雷数</string>
+    <string name="custom_err_rows">行必须是 9 到 50 之间的整数</string>
+    <string name="custom_err_cols">列必须是 9 到 50 之间的整数</string>
+    <string name="custom_err_mines">雷数必须是 1 到 %1$d 之间的整数</string>
+    <string name="custom_ok">确定</string>
+    <string name="custom_cancel">取消</string>
+    <string name="custom_hint">点行体选中 · 点 ◀ ▶ 调整 · 或用手柄方向键</string>
+
+    <!-- 键位设置 -->
+    <string name="bindings_title">键位设置</string>
+    <string name="bind_reset">恢复默认</string>
+    <string name="bind_close">关闭</string>
+    <string name="bind_conflict">「%1$s」已被「%2$s」占用</string>
+    <string name="bind_listening">按下新键…</string>
+    <string name="bind_current_key">当前按键: %1$s</string>
+    <string name="bind_help">选择动作后按 A/B 开始录制，再按目标键 · Back 取消</string>
+
+    <!-- 统计 -->
+    <string name="stats_title">游戏统计</string>
+    <string name="stats_total">总局数: %1$d</string>
+    <string name="stats_win_lose">胜利: %1$d / 失败: %2$d</string>
+    <string name="stats_win_rate">胜率: %1$d%%</string>
+    <string name="stats_current_streak">当前连胜: %1$d</string>
+    <string name="stats_best_streak">最长连胜: %1$d</string>
+    <string name="stats_total_time">总游戏时间: %1$s</string>
+    <string name="stats_fastest">最快完成:</string>
+    <string name="stats_best_rate">最佳效率(3BV/s):</string>
+    <string name="stats_level_line">　%1$s: %2$s</string>
+
+    <!-- 效率曲线 -->
+    <string name="history_title">效率曲线（3BV/s）</string>
+    <string name="history_label">◀ %1$s ▶</string>
+    <string name="history_empty">该难度暂无胜局记录</string>
+    <string name="history_summary">样本 %1$d 局 · 平均 %2$s · 最佳 %3$s 3BV/s</string>
+    <string name="history_hint">左右切换难度 · 任意键 / Back 关闭</string>
+
+    <!-- 关于 -->
+    <string name="about_title">关于扫雷</string>
+    <string name="about_line1">经典扫雷游戏</string>
+    <string name="about_version_with_v">安卓版 v%1$s</string>
+    <string name="about_version">安卓版</string>
+    <string name="about_line3">引擎移植自桌面版</string>
+    <string name="about_device">攻氪 KPA 手柄适配</string>
+    <string name="about_controls">%1$s%2$s%3$s%4$s 移动 · %5$s 翻开/和弦 · %6$s 标雷 · %7$s 新游戏 · %8$s 菜单</string>
+
+    <!-- 无障碍 -->
+    <string name="a11y_game_view">扫雷棋盘</string>
+    <string name="a11y_action_activate">翻开或和弦</string>
+    <string name="a11y_action_flag">标雷</string>
+    <string name="a11y_action_new_game">新游戏</string>
+    <string name="a11y_action_menu">打开菜单</string>
+    <string name="a11y_state_ready">准备开始</string>
+    <string name="a11y_state_playing">游戏中，剩余雷数 %1$d，用时 %2$s</string>
+    <string name="a11y_state_won">胜利，用时 %1$s</string>
+    <string name="a11y_state_lost">失败，用时 %1$s</string>
+    <string name="a11y_generating">正在生成无猜雷局</string>
+    <string name="a11y_no_guess_fallback">无解保护不可用</string>
+    <string name="a11y_status">当前时间 %1$s，电量 %2$s</string>
 </resources>

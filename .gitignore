@@ -1,10 +1,30 @@
+# 依赖与构建产物
 node_modules/
 dist/
 *.log
-.DS_Store
 
-# Gradle user home (local build cache, truststore)
+# 签名密钥与密码（绝不入库；备份请放到仓库目录之外，见 README「发布与签名」）
+*.keystore
+*.jks
+*.p12
+*.pem
+keystore.properties
+dist/keystore*
+android/keystore/
+
+# 系统 / 编辑器临时文件
+**/.DS_Store
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Gradle user home（本地构建缓存，非项目文件）
 .gradle-user-home/
+android/.gradle/
+android/app/build/
+android/core/build/
+android/local.properties
 
 # CodeGraph 本地索引（工具生成，可随时 rebuild）
 .codegraph/

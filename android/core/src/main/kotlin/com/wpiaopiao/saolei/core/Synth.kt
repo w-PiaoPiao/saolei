@@ -8,7 +8,20 @@ object Synth {
 
     const val SAMPLE_RATE = 44100
 
+    /**
+     * 音效合成版本号（L7）：合成参数/实现变化时递增。
+     * app 侧用它拼 WAV 缓存文件名（如 `click-v2.wav`），避免存量设备永远播放旧音效。
+     */
+    const val SFX_VERSION = 2
+
     enum class Wave { SINE, SQUARE, TRIANGLE, SAWTOOTH }
+
+    /**
+     * 统一指数衰减包络：从 [volume] 指数衰减到 0.001（对齐 Web Audio
+     * `exponentialRampToValueAtTime(0.001, t + duration)`）。
+     */
+    private fun envelope(volume: Double, t: Double, duration: Double): Double =
+        volume * Math.exp(Math.log(0.001 / volume) * t / duration)
 
     /** 单音：波形 × 指数衰减包络（对齐 Web Audio exponentialRampToValueAtTime(0.001)） */
     fun tone(freq: Double, duration: Double, wave: Wave, volume: Double): ShortArray {
@@ -26,13 +39,17 @@ object Synth {
                 Wave.TRIANGLE -> 2.0 / Math.PI * Math.asin(Math.sin(phase))
                 Wave.SAWTOOTH -> 2.0 * (t * freq - Math.floor(0.5 + t * freq))
             }
-            val env = volume * Math.exp(Math.log(0.001 / volume) * t / duration)
+            val env = envelope(volume, t, duration)
             out[i] = (raw * env * Short.MAX_VALUE).toInt().coerceIn(-32768, 32767).toShort()
         }
         return out
     }
 
-    /** 白噪声：随机 × 线性衰减（对齐 audio.js playNoise） */
+    /**
+     * 白噪声：随机 × 线性衰减 buffer × 指数增益包络（对齐 audio.js playNoise）。
+     * 桌面版 buffer 内是 `(rand*2-1) * (1 - i/N)`，播放时再经 gain 从 volume 指数 ramp 到
+     * 0.001，因此这里是"线性 × 指数"双衰减；旧实现漏了指数项，爆炸音后半段约响 10 倍。
+     */
     fun noise(duration: Double, volume: Double): ShortArray {
         require(duration > 0 && volume > 0) { "合成参数必须为正数" }
         val n = (SAMPLE_RATE * duration).toInt()
@@ -40,7 +57,8 @@ object Synth {
         val rnd = java.util.Random()
         for (i in 0 until n) {
             val t = i.toDouble() / SAMPLE_RATE
-            val env = volume * (1.0 - t / duration)
+            val linear = 1.0 - t / duration
+            val env = envelope(volume, t, duration) * linear
             out[i] = ((rnd.nextDouble() * 2 - 1) * env * Short.MAX_VALUE)
                 .toInt().coerceIn(-32768, 32767).toShort()
         }

@@ -2,6 +2,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const GameEngine = require('../src/game.js')
+const Generator = require('../src/generator.js')
 
 /** 手动构造已知雷局：设置雷、计算数字、置 minesPlaced */
 function setupEngine(level, mines) {
@@ -259,4 +260,167 @@ test('胜利终局后同样拒绝操作', () => {
   g.toggleFlag(6, 6)
   assert.equal(g.revealedCount, revealedBefore)
   assert.equal(g.flagCount, 2)
+})
+
+// ---------- 第二轮修复回归（H2/M3/M8/L12/L15/L20） ----------
+
+function totalMinesOnBoard(g) {
+  let n = 0
+  for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) if (g.board[r][c].mine) n++
+  return n
+}
+
+test('API 签名：reveal/placeMines 接受可选的 options 参数（H2，UI 用 arity 探测）', () => {
+  assert.equal(GameEngine.prototype.reveal.length, 3)
+  assert.equal(GameEngine.prototype.placeMines.length, 3)
+  assert.equal(GameEngine.prototype.applyPlanAndReveal.length, 3)
+})
+
+test('wonByFlags：插对全部旗获胜时置 true，翻格获胜为 false，新局重置（L12/DE-13）', () => {
+  const flagWin = setupEngine('beginner', [[0, 0], [0, 1], [1, 1]])
+  for (const [r, c] of [[0, 0], [0, 1], [1, 1]]) flagWin.toggleFlag(r, c)
+  assert.equal(flagWin.state, 'won')
+  assert.equal(flagWin.wonByFlags, true)
+
+  const revealWin = setupEngine('beginner', [[0, 0], [0, 1], [1, 1]])
+  for (let r = 0; r < revealWin.rows; r++) {
+    for (let c = 0; c < revealWin.cols; c++) if (!revealWin.board[r][c].mine) revealWin.reveal(r, c)
+  }
+  assert.equal(revealWin.state, 'won')
+  assert.equal(revealWin.wonByFlags, false)
+
+  flagWin.init('beginner')
+  assert.equal(flagWin.wonByFlags, false)
+  assert.equal(flagWin.elapsedMs, 0)
+})
+
+test('0 雷棋盘：插旗→问号不判胜，必须真正翻开（M8）', () => {
+  const g = new GameEngine()
+  g.initCustom(9, 9, 0)
+  g.toggleFlag(5, 5)
+  assert.equal(g.state, 'playing')
+  g.toggleFlag(5, 5) // 旗 → 问号：flagCount 归 0
+  assert.equal(g.flagCount, 0)
+  assert.equal(g.state, 'playing')
+  assert.equal(g.revealedCount, 0)
+  g.reveal(5, 5)
+  assert.equal(g.state, 'won')
+  assert.equal(g.revealedCount, 81)
+})
+
+test('applyPlanAndReveal：合法 plan 应用并翻开首点，几何字段透传', () => {
+  const g = new GameEngine('beginner')
+  const plan = Generator.generate(g.rows, g.cols, g.totalMines, 4, 4, false)
+  const applied = g.applyPlanAndReveal(4, 4, plan)
+  assert.equal(applied, true)
+  assert.equal(g.state, 'playing')
+  assert.equal(g.minesPlaced, true)
+  assert.equal(totalMinesOnBoard(g), 10)
+  assert.ok(g.bbbv > 0)
+  assert.equal(g.board[4][4].mine, false)
+  assert.equal(g.board[4][4].revealed, true)
+})
+
+test('applyPlanAndReveal：竞态/非法 plan 一律拒绝且不开局（M3/L20）', () => {
+  const g = new GameEngine('beginner')
+  const plan = Generator.generate(g.rows, g.cols, g.totalMines, 4, 4, false)
+  // 点击格已插旗
+  g.toggleFlag(4, 4)
+  assert.equal(g.applyPlanAndReveal(4, 4, plan), false)
+  assert.equal(g.minesPlaced, false)
+  g.toggleFlag(4, 4) // 取消旗（回到问号）
+  g.toggleFlag(4, 4) // 问号 → 取消
+  // plan 的 safeRow/safeCol 与点击格不一致（过期/串位结果）
+  assert.equal(g.applyPlanAndReveal(5, 5, plan), false)
+  assert.equal(g.minesPlaced, false)
+  // plan 非法（长度/雷数/安全区）
+  assert.equal(g.applyPlanAndReveal(4, 4, null), false)
+  assert.equal(g.applyPlanAndReveal(4, 4, { mines: new Uint8Array(0) }), false)
+  assert.equal(g.applyPlanAndReveal(4, 4, { mines: plan.mines, rows: 99, safeRow: 4, safeCol: 4 }), false)
+  assert.equal(g.minesPlaced, false)
+  // 合法 plan 应用后，重复调用返回 false（同局幂等）
+  assert.equal(g.applyPlanAndReveal(4, 4, plan), true)
+  assert.equal(g.applyPlanAndReveal(4, 4, plan), false)
+})
+
+test('applyPlanAndReveal：缺几何字段的旧 plan 向后兼容（仅校验长度/雷数）', () => {
+  const g = new GameEngine('beginner')
+  const plan = Generator.generate(g.rows, g.cols, g.totalMines, 4, 4, false)
+  const legacy = { mines: plan.mines, noGuessFallback: false }
+  assert.equal(g.applyPlanAndReveal(4, 4, legacy), true)
+  assert.equal(g.minesPlaced, true)
+})
+
+test('applyPlan：长度/雷数/安全区/行列不符时返回 false 且不修改任何状态（M3）', () => {
+  const g = new GameEngine('beginner')
+  const good = Generator.generate(g.rows, g.cols, g.totalMines, 4, 4, false)
+  const stateBefore = g.state
+  const badCases = [
+    new Uint8Array(g.rows * g.cols), // 长度对但雷数不符（0 ≠ 10）
+    new Uint8Array(g.rows * g.cols - 1), // 长度不符
+    Object.assign({}, good, { rows: 99 }),
+    Object.assign({}, good, { cols: 99 })
+  ]
+  for (const plan of badCases) {
+    assert.equal(g.applyPlan(plan), false)
+    assert.equal(g.minesPlaced, false)
+    assert.equal(g.state, stateBefore)
+  }
+  // 安全区有雷：把一颗非安全区的雷挪进 3×3 安全区（保持总雷数不变）
+  const safeIdx = 4 * g.cols + 4
+  assert.equal(good.mines[safeIdx], 0)
+  const planted = Uint8Array.from(good.mines)
+  let moved = false
+  for (let i = 0; i < planted.length; i++) {
+    const r = (i / g.cols) | 0
+    const c = i % g.cols
+    if (Math.abs(r - 4) > 1 || Math.abs(c - 4) > 1) {
+      if (planted[i] === 1) {
+        planted[i] = 0
+        planted[safeIdx] = 1
+        moved = true
+        break
+      }
+    }
+  }
+  assert.equal(moved, true)
+  assert.equal(
+    g.applyPlan({ mines: planted, rows: g.rows, cols: g.cols, safeRow: 4, safeCol: 4 }),
+    false
+  )
+  assert.equal(g.minesPlaced, false)
+  // 合法 plan 仍可应用
+  assert.equal(g.applyPlan(good), true)
+  assert.equal(g.minesPlaced, true)
+})
+
+test('placeMines 透传 options：noGuess 大棋盘用小预算快速降级（H2）', () => {
+  const g = new GameEngine()
+  g.initCustom(50, 50, 500)
+  g.noGuess = true
+  const t0 = Date.now()
+  const applied = g.placeMines(25, 25, { budgetMs: 1, maxAttempts: 1 })
+  const elapsed = Date.now() - t0
+  assert.equal(applied, true)
+  assert.ok(elapsed < 500, `同步生成应被小预算限制（实际 ${elapsed}ms）`)
+  assert.equal(g.minesPlaced, true)
+  assert.equal(g.noGuessFallback, true)
+  assert.equal(totalMinesOnBoard(g), 500)
+  assert.ok(g.bbbv > 0)
+})
+
+test('插旗→首点状态机：先插旗进入 playing 后，reveal 仍会布雷并计算 3BV（L20）', () => {
+  const g = new GameEngine('beginner')
+  g.toggleFlag(0, 0)
+  assert.equal(g.state, 'playing')
+  assert.equal(g.minesPlaced, false)
+  g.reveal(4, 4, { budgetMs: 50, maxAttempts: 8 })
+  assert.equal(g.state, 'playing')
+  assert.equal(g.minesPlaced, true)
+  assert.equal(totalMinesOnBoard(g), 10)
+  assert.ok(g.bbbv > 0)
+  // 首点 3×3 安全区无雷
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) assert.equal(g.board[4 + dr][4 + dc].mine, false)
+  }
 })
